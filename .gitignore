@@ -1,0 +1,24 @@
+# node.js
+node_modules/
+
+# expo
+.expo/
+dist/
+web-build/
+*.tmp
+
+# logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Android native build output
+android/build/
+android/app/build/
+android/.gradle/
+android/captures/
+android/.idea/
+
+# OS metadata
+.DS_Store
+Thumbs.db

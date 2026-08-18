@@ -1,0 +1,4 @@
+export const PROTOCOL_VERSION = '1.0';
+export const DEFAULT_HEARTBEAT_INTERVAL_MS = 2000;
+export const DEFAULT_PING_TIMEOUT_MS = 5000;
+export const MAX_RECONNECT_ATTEMPTS = 5;
