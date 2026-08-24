@@ -11,6 +11,9 @@ export const STORAGE_KEYS = {
   LAST_SESSION: '@traffic_camera_last_session',
 };
 
+export const DEFAULT_REST_PORT = 8000;
+export const DEFAULT_WEBSOCKET_PORT = 8001;
+
 export const DEFAULT_SETTINGS = {
   autoConnect: false,
   debugMode: false,
@@ -19,4 +22,9 @@ export const DEFAULT_SETTINGS = {
   serverHistory: [],
   vibrateOnScan: true,
   keepScreenOn: true,
+  serverHost: '10.1.111.112',
+  serverPort: DEFAULT_WEBSOCKET_PORT,
+  apiPort: DEFAULT_REST_PORT,
+  serverProtocol: 'ws' as const,
+  cameraDirection: 'NORTH' as const,
 };

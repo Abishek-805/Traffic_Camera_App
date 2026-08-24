@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { Surface, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors } from '../theme';
+import { DEFAULT_SETTINGS } from '../utils/constants';
 
 interface StatusCardProps {
   server?: string;
@@ -16,7 +17,7 @@ interface StatusCardProps {
 
 export const StatusCard: React.FC<StatusCardProps> = ({
   server = 'Not Connected',
-  port = 8000,
+  port = DEFAULT_SETTINGS.serverPort,
   cameraId = 'CAM-001',
   assignedLane = 'Unassigned',
   pingMs = 0,

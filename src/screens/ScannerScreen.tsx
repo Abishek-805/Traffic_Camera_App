@@ -7,6 +7,7 @@ import { QRScanner } from '../components/QRScanner';
 import { Header } from '../components/Header';
 import { QRCodeService } from '../services/qr/QRCodeService';
 import { AppColors } from '../theme';
+import { DEFAULT_SETTINGS } from '../utils/constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Scanner'>;
 
@@ -35,8 +36,8 @@ export const ScannerScreen: React.FC<Props> = ({ navigation }) => {
   const handleSimulateScan = () => {
     const mockPayloadJSON = JSON.stringify({
       version: '1.0',
-      server: '192.168.1.3',
-      port: 8000,
+      server: DEFAULT_SETTINGS.serverHost,
+      port: DEFAULT_SETTINGS.serverPort,
       session: 'CAM-LANE1-9F8A',
       token: 'auth_token_demo_9df7c6ab',
       expires: Date.now() + 3600000,

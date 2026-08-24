@@ -8,6 +8,7 @@ import { Header } from '../components/Header';
 import { StatusCard } from '../components/StatusCard';
 import { useConnection } from '../hooks/useConnection';
 import { useCameraStats } from '../hooks/useCamera';
+import { DEFAULT_SETTINGS } from '../utils/constants';
 import { AppColors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Waiting'>;
@@ -51,8 +52,8 @@ export const WaitingScreen: React.FC<Props> = ({ navigation }) => {
         </Surface>
 
         <StatusCard
-          server={connectionInfo?.server || '192.168.1.3'}
-          port={connectionInfo?.port || 8000}
+          server={connectionInfo?.server || DEFAULT_SETTINGS.serverHost}
+          port={connectionInfo?.port || DEFAULT_SETTINGS.serverPort}
           cameraId={connectionInfo?.cameraId || 'CAM-001'}
           assignedLane={connectionInfo?.assignedLane || 'North Intersection - Lane 1'}
           pingMs={pingMs}

@@ -16,7 +16,7 @@ export interface QRPayload {
   session: string;
   token: string;
   expires: number;
-  protocol: 'websocket' | 'http';
+  protocol: 'websocket' | 'http' | 'ws' | 'wss';
   secure: boolean;
   defaultLane?: string;
 }

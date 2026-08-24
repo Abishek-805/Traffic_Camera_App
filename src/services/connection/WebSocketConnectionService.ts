@@ -50,8 +50,16 @@ export class WebSocketConnectionService implements IConnectionService {
 
     return new Promise((resolve, reject) => {
       try {
-        const protocol = qrPayload.secure ? 'wss' : 'ws';
-        const wsUrl = `${protocol}://${qrPayload.server}:${qrPayload.port}/ws/camera`;
+        const protocol = (qrPayload.protocol === 'wss' || qrPayload.secure) ? 'wss' : 'ws';
+        const portStr = (qrPayload.port === 443 || qrPayload.port === 80) ? '' : `:${qrPayload.port}`;
+        const wsUrl = `${protocol}://${qrPayload.server}${portStr}/ws/camera`;
+
+        console.log(`[WS_CONNECT_ATTEMPT] ${wsUrl}`, {
+          host: qrPayload.server,
+          port: qrPayload.port,
+          protocol,
+          url: wsUrl,
+        });
 
         this.socket = new WebSocket(wsUrl);
 

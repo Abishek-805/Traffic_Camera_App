@@ -54,14 +54,13 @@ export const VisionCameraPreview: React.FC<VisionCameraPreviewProps> = React.mem
   );
 });
 
-const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFrameSampled, cameraRef }) => {
-  const { Camera, useCameraDevice, useCameraPermission, useFrameOutput } = VisionCamModule;
+const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFrameSampled, isStreaming = false, cameraRef }) => {
+  const { Camera, useCameraDevice, useCameraPermission } = VisionCamModule;
   const { hasPermission, requestPermission } = useCameraPermission();
   const { settings } = useCameraSettings();
   const device = useCameraDevice(settings.facing);
   
   const instanceIdRef = useRef(`VISION_CAM_${Math.floor(Math.random() * 10000)}`);
-  const lastSampleTimeRef = useRef(0);
   const onFrameSampledRef = useRef(onFrameSampled);
   onFrameSampledRef.current = onFrameSampled;
 
@@ -78,63 +77,36 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
     }
   }, [hasPermission, requestPermission]);
 
-  const frameOutput = useFrameOutput({
-    onFrame(frame: any) {
-      const now = Date.now();
-      if (now - lastSampleTimeRef.current >= 500) {
-        lastSampleTimeRef.current = now;
-        
-        // Execute heavy frame extraction asynchronously off the native frame loop
-        setTimeout(() => {
-          try {
-            let processed = false;
-            // Option A: Nitro FrameConverter
-            if (VisionCamModule.FrameConverter && typeof VisionCamModule.FrameConverter.convertFrameToImage === 'function') {
-              const img = VisionCamModule.FrameConverter.convertFrameToImage(frame);
-              if (img) {
-                const resized = img.resize(640, 360);
-                const encoded = resized.toEncodedImageData('jpg', 25);
-                const base64 = arrayBufferToBase64(encoded.buffer);
-                if (onFrameSampledRef.current && base64) {
-                  onFrameSampledRef.current({
-                    base64,
-                    width: 640,
-                    height: 360,
-                    timestamp: now,
-                  });
-                  processed = true;
-                }
+  // Sample hardware GPU snapshots via takeSnapshot() every 500ms (~2 FPS) without interrupting native preview
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (cameraRef?.current && typeof cameraRef.current.takeSnapshot === 'function') {
+        const now = Date.now();
+        cameraRef.current
+          .takeSnapshot()
+          .then((img: any) => {
+            if (img) {
+              const resized = img.resize(640, 360);
+              const encoded = resized.toEncodedImageData('jpg', 25);
+              const base64 = arrayBufferToBase64(encoded.buffer);
+              if (onFrameSampledRef.current && base64) {
+                onFrameSampledRef.current({
+                  base64,
+                  width: 640,
+                  height: 360,
+                  timestamp: now,
+                });
               }
             }
-
-            // Option B: Non-interrupting Preview Surface Snapshot Fallback
-            if (!processed && cameraRef?.current && typeof cameraRef.current.takeSnapshot === 'function') {
-              cameraRef.current.takeSnapshot().then((img: any) => {
-                if (img) {
-                  const resized = img.resize(640, 360);
-                  const encoded = resized.toEncodedImageData('jpg', 25);
-                  const base64 = arrayBufferToBase64(encoded.buffer);
-                  if (onFrameSampledRef.current && base64) {
-                    onFrameSampledRef.current({
-                      base64,
-                      width: 640,
-                      height: 360,
-                      timestamp: now,
-                    });
-                  }
-                }
-              }).catch((err: any) => {
-                CameraLogger.log('SNAPSHOT_PROCESS_ERROR', { error: err?.message || String(err) });
-              });
-            }
-          } catch (err: any) {
-            CameraLogger.log('FRAME_PROCESS_ERROR', { error: err?.message || String(err) });
-          }
-        }, 0);
+          })
+          .catch((err: any) => {
+            CameraLogger.log('SNAPSHOT_PROCESS_ERROR', { error: err?.message || String(err) });
+          });
       }
-      frame.dispose();
-    },
-  });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [cameraRef]);
 
   if (!hasPermission) {
     return (
@@ -165,7 +137,6 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
         isActive={true}
         torchMode={settings.torch ? 'on' : 'off'}
         resizeMode="cover"
-        outputs={[frameOutput]}
       />
       {children}
     </View>

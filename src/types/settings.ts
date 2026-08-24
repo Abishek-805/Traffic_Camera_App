@@ -6,6 +6,10 @@ export interface AppSettings {
   serverHistory: string[];
   vibrateOnScan: boolean;
   keepScreenOn: boolean;
+  serverHost: string;
+  serverPort: number;
+  serverProtocol: 'ws' | 'wss';
+  cameraDirection: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
 }
 
 export interface NodeHealthMetrics {

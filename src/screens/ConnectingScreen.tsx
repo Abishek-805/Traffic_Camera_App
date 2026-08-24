@@ -8,6 +8,7 @@ import { Header } from '../components/Header';
 import { useConnection } from '../hooks/useConnection';
 import { AppColors } from '../theme';
 import { QRPayload } from '../types/connection';
+import { DEFAULT_SETTINGS } from '../utils/constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Connecting'>;
 
@@ -16,8 +17,8 @@ export const ConnectingScreen: React.FC<Props> = ({ route, navigation }) => {
   const [step, setStep] = useState<number>(1);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const server = route.params?.server || '192.168.1.3';
-  const port = route.params?.port || 8000;
+  const server = route.params?.server || DEFAULT_SETTINGS.serverHost;
+  const port = route.params?.port || DEFAULT_SETTINGS.serverPort;
   const session = route.params?.session || 'CAM-SESSION-9F8A';
   const token = route.params?.token || 'auth_token_demo';
 
