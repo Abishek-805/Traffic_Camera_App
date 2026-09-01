@@ -1,8 +1,10 @@
+import { QRPayload } from './connection';
+
 export type RootStackParamList = {
   Splash: undefined;
   Home: undefined;
   Scanner: undefined;
-  Connecting: { server?: string; port?: number; session?: string; token?: string };
+  Connecting: { payload: QRPayload };
   Waiting: undefined;
   Streaming: undefined;
   Disconnected: { reason?: string };

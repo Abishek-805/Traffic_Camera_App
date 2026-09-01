@@ -41,6 +41,7 @@ const defaultConfig: UploadWorkerConfig = {
 
 export class UploadWorker {
   private frameIdCounter: number = 0;
+  private readonly runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   private latestFrame: CaptureResult | null = null;
   private isProcessing: boolean = false;
   private config: UploadWorkerConfig;
@@ -71,10 +72,10 @@ export class UploadWorker {
         const direction = info?.assignedLane?.split(' ')[0]?.toUpperCase() || 'NORTH';
         this.frameIdCounter = (this.frameIdCounter || 0) + 1;
         const formattedCounter = String(this.frameIdCounter).padStart(6, '0');
-        frame.frameId = `${direction}-${formattedCounter}`;
+        frame.frameId = `${direction}-${this.runId}-${formattedCounter}`;
       } catch {
         this.frameIdCounter = (this.frameIdCounter || 0) + 1;
-        frame.frameId = `NORTH-${String(this.frameIdCounter).padStart(6, '0')}`;
+        frame.frameId = `NORTH-${this.runId}-${String(this.frameIdCounter).padStart(6, '0')}`;
       }
     }
 
@@ -185,7 +186,7 @@ export class UploadWorker {
       const direction = info?.assignedLane?.split(' ')[0]?.toLowerCase() || 'north';
       const uploadTimestamp = Date.now();
       const frameAgeMs = uploadTimestamp - frame.timestamp;
-      const frameId = frame.frameId || `NORTH-${String(this.frameIdCounter).padStart(6, '0')}`;
+      const frameId = frame.frameId || `NORTH-${this.runId}-${String(this.frameIdCounter).padStart(6, '0')}`;
 
       const sent = connService.sendMessage({
         version: '1.0',

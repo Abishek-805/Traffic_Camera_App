@@ -27,7 +27,7 @@ export class DeviceUtils {
       manufacturer: Device.manufacturer || (Platform.OS === 'ios' ? 'Apple' : 'Android Manufacturer'),
       model: Device.modelName || 'Node Camera Device',
       platform: Platform.OS as 'android' | 'ios' | 'web',
-      appVersion: '1.0.0',
+      appVersion: '1.0.2',
       batteryLevel: Math.round(batteryLevel * 100),
       isCharging,
     };

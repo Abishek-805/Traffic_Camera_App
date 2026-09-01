@@ -6,7 +6,7 @@ export class CameraService implements ICameraService {
   private settings: CameraSettings = {
     facing: 'back',
     resolution: '480p',
-    targetFps: 30,
+    targetFps: 2,
     torch: false,
     zoom: 0,
     autoFocus: true,
@@ -26,6 +26,10 @@ export class CameraService implements ICameraService {
 
   public setResolution(resolution: VideoQuality): void {
     this.settings.resolution = resolution;
+  }
+
+  public setTargetFps(targetFps: number): void {
+    this.settings.targetFps = targetFps === 4 ? 4 : 2;
   }
 
   public getResolutionConfig(): { quality: number; width: number; height: number } {

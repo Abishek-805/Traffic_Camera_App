@@ -1,19 +1,19 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Surface, Switch, List, SegmentedButtons, TextInput } from 'react-native-paper';
+import { Text, Surface, Switch, List, SegmentedButtons } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { Header } from '../components/Header';
 import { useSettings } from '../hooks/useSettings';
 import { useCamera } from '../hooks/useCamera';
 import { AppColors } from '../theme';
-import { APP_METADATA, DEFAULT_SETTINGS } from '../utils/constants';
+import { APP_METADATA } from '../utils/constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export const SettingsScreen: React.FC<Props> = ({ navigation }) => {
   const { settings: appSettings, updateSettings } = useSettings();
-  const { settings: cameraSettings, setFacing, setResolution } = useCamera();
+  const { settings: cameraSettings, setFacing, setResolution, setTargetFps } = useCamera();
 
   return (
     <View style={styles.container}>
@@ -34,72 +34,25 @@ export const SettingsScreen: React.FC<Props> = ({ navigation }) => {
             style={styles.segmented}
           />
 
-          <Text style={styles.label}>Stream Resolution</Text>
+          <Text style={styles.label}>Streaming profile</Text>
+          <SegmentedButtons
+            value={String(cameraSettings.targetFps)}
+            onValueChange={(val) => setTargetFps(Number(val))}
+            buttons={[
+              { value: '2', label: 'Low power · 2 FPS' },
+              { value: '4', label: 'Balanced · 4 FPS' },
+            ]}
+            style={styles.segmented}
+          />
+
+          <Text style={styles.label}>Upload size limit (longest edge)</Text>
           <SegmentedButtons
             value={cameraSettings.resolution}
             onValueChange={(val) => setResolution(val as any)}
             buttons={[
-              { value: '480p', label: '480p SD' },
-              { value: '720p', label: '720p HD' },
-              { value: '1080p', label: '1080p FHD' },
-            ]}
-            style={styles.segmented}
-          />
-        </Surface>
-
-        <Surface style={styles.section} elevation={2}>
-          <Text style={styles.sectionHeader}>WEBSOCKET SERVER TARGET & DIRECTION</Text>
-
-          <Text style={styles.label}>Server Host / IP Address</Text>
-          <TextInput
-            mode="outlined"
-            value={appSettings.serverHost || DEFAULT_SETTINGS.serverHost}
-            onChangeText={(val) => updateSettings({ serverHost: val })}
-            placeholder={`e.g. ${DEFAULT_SETTINGS.serverHost} or domain.com`}
-            outlineColor={AppColors.border}
-            activeOutlineColor={AppColors.primary}
-            textColor={AppColors.textPrimary}
-            style={styles.textInput}
-          />
-
-          <View style={styles.rowTwoCol}>
-            <View style={styles.flexCol}>
-              <Text style={styles.label}>WebSocket Port (AI Server)</Text>
-              <TextInput
-                mode="outlined"
-                value={String(appSettings.serverPort || DEFAULT_SETTINGS.serverPort)}
-                onChangeText={(val) => updateSettings({ serverPort: parseInt(val, 10) || DEFAULT_SETTINGS.serverPort })}
-                keyboardType="numeric"
-                outlineColor={AppColors.border}
-                activeOutlineColor={AppColors.primary}
-                textColor={AppColors.textPrimary}
-                style={styles.textInput}
-              />
-            </View>
-
-            <View style={styles.flexCol}>
-              <Text style={styles.label}>Protocol</Text>
-              <SegmentedButtons
-                value={appSettings.serverProtocol || 'ws'}
-                onValueChange={(val) => updateSettings({ serverProtocol: val as 'ws' | 'wss' })}
-                buttons={[
-                  { value: 'ws', label: 'ws://' },
-                  { value: 'wss', label: 'wss://' },
-                ]}
-                style={styles.segmentedSmall}
-              />
-            </View>
-          </View>
-
-          <Text style={styles.label}>Camera Direction / Lane Identity</Text>
-          <SegmentedButtons
-            value={appSettings.cameraDirection || 'NORTH'}
-            onValueChange={(val) => updateSettings({ cameraDirection: val as any })}
-            buttons={[
-              { value: 'NORTH', label: 'NORTH' },
-              { value: 'SOUTH', label: 'SOUTH' },
-              { value: 'EAST', label: 'EAST' },
-              { value: 'WEST', label: 'WEST' },
+              { value: '480p', label: '640 px' },
+              { value: '720p', label: '1280 px' },
+              { value: '1080p', label: '1920 px' },
             ]}
             style={styles.segmented}
           />
@@ -109,22 +62,8 @@ export const SettingsScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.sectionHeader}>NODE PREFERENCES</Text>
 
           <List.Item
-            title="Auto Connect on Scan"
-            description="Automatically connect when valid QR is scanned"
-            titleStyle={styles.itemTitle}
-            descriptionStyle={styles.itemDesc}
-            right={() => (
-              <Switch
-                value={appSettings.autoConnect}
-                onValueChange={(val) => updateSettings({ autoConnect: val })}
-                color={AppColors.primary}
-              />
-            )}
-          />
-
-          <List.Item
             title="Developer / Debug Mode"
-            description="Enable detailed socket message logs and simulated controls"
+            description="Show diagnostic connection information"
             titleStyle={styles.itemTitle}
             descriptionStyle={styles.itemDesc}
             right={() => (
@@ -226,21 +165,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: AppColors.textPrimary,
-  },
-  rowTwoCol: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  flexCol: {
-    flex: 1,
-  },
-  textInput: {
-    backgroundColor: AppColors.background,
-    fontSize: 13,
-    height: 44,
-  },
-  segmentedSmall: {
-    marginVertical: 4,
-    height: 44,
   },
 });

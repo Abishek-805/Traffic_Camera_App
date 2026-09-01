@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useCallback, useState, useEffect, ReactNode } from 'react';
 import { ConnectionInfo, ConnectionStateEnum, QRPayload } from '../types/connection';
 import { SocketMessage } from '../types/protocol';
 import { ConnectionServiceFactory } from '../services/connection/ConnectionServiceFactory';
@@ -15,8 +15,8 @@ interface ConnectionContextType {
   connectWithQR: (qrPayload: QRPayload) => Promise<ConnectionInfo>;
   disconnect: (reason?: string) => Promise<void>;
   reconnect: () => Promise<ConnectionInfo>;
-  triggerMockStartStream: () => void;
-  triggerMockStopStream: () => void;
+  requestStartStream: () => void;
+  requestStopStream: () => void;
 }
 
 export const ConnectionContext = createContext<ConnectionContextType>({
@@ -30,8 +30,8 @@ export const ConnectionContext = createContext<ConnectionContextType>({
   connectWithQR: async () => { throw new Error('Not initialized'); },
   disconnect: async () => {},
   reconnect: async () => { throw new Error('Not initialized'); },
-  triggerMockStartStream: () => {},
-  triggerMockStopStream: () => {},
+  requestStartStream: () => {},
+  requestStopStream: () => {},
 });
 
 export const ConnectionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -75,35 +75,27 @@ export const ConnectionProvider: React.FC<{ children: ReactNode }> = ({ children
     };
   }, [service]);
 
-  const connectWithQR = async (qrPayload: QRPayload): Promise<ConnectionInfo> => {
+  const connectWithQR = useCallback(async (qrPayload: QRPayload): Promise<ConnectionInfo> => {
     const info = await service.connect(qrPayload);
     setConnectionInfo(info);
     return info;
-  };
+  }, [service]);
 
-  const disconnect = async (reason: string = 'User disconnect'): Promise<void> => {
+  const disconnect = useCallback(async (reason: string = 'User disconnect'): Promise<void> => {
     await service.disconnect(reason);
     setConnectionInfo(null);
     setLastDisconnectReason(service.getLastDisconnectReason());
-  };
+  }, [service]);
 
-  const reconnect = async (): Promise<ConnectionInfo> => {
+  const reconnect = useCallback(async (): Promise<ConnectionInfo> => {
     const info = await service.reconnect();
     setConnectionInfo(info);
     return info;
-  };
+  }, [service]);
 
-  const triggerMockStartStream = () => {
-    if ('triggerMockStartStream' in service) {
-      (service as any).triggerMockStartStream();
-    }
-  };
+  const requestStartStream = useCallback(() => service.requestStartStream(), [service]);
 
-  const triggerMockStopStream = () => {
-    if ('triggerMockStopStream' in service) {
-      (service as any).triggerMockStopStream();
-    }
-  };
+  const requestStopStream = useCallback(() => service.requestStopStream(), [service]);
 
   return (
     <ConnectionContext.Provider
@@ -118,8 +110,8 @@ export const ConnectionProvider: React.FC<{ children: ReactNode }> = ({ children
         connectWithQR,
         disconnect,
         reconnect,
-        triggerMockStartStream,
-        triggerMockStopStream,
+        requestStartStream,
+        requestStopStream,
       }}
     >
       {children}

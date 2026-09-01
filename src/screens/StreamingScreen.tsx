@@ -9,6 +9,8 @@ import { useConnection } from '../hooks/useConnection';
 import { useCameraSettings, useCameraStats } from '../hooks/useCamera';
 import { AppColors } from '../theme';
 import { CameraLogger } from '../utils/logger';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { useSettings } from '../hooks/useSettings';
 
 import { CameraMode } from '../types/camera';
 import { CameraCaptureService } from '../services/camera/CameraCaptureService';
@@ -16,49 +18,36 @@ import { CameraCaptureService } from '../services/camera/CameraCaptureService';
 type Props = NativeStackScreenProps<RootStackParamList, 'Streaming'>;
 
 export const StreamingScreen: React.FC<Props> = ({ navigation }) => {
-  const { connectionInfo, pingMs, triggerMockStopStream, disconnect } = useConnection();
+  const { settings: appSettings } = useSettings();
+  const { connectionState, connectionInfo, pingMs, requestStopStream, disconnect } = useConnection();
   
   // Settings context (updates rarely, won't cause stats-driven re-renders)
   const { settings, setFacing, toggleTorch } = useCameraSettings();
   
   // Stats and Controls context (updates frequently)
-  const { frameStats, cameraHealthState, cameraKey, startRealStream, stopRealStream, handleFrameSampled } = useCameraStats();
+  const { frameStats, cameraHealthState, startRealStream, stopRealStream, handleFrameSampled } = useCameraStats();
   
   const cameraRef = useRef<any>(null);
-
-  // Start real camera stream on mount, stop on unmount
   useEffect(() => {
-    CameraLogger.log('CAMERA_KEY_CHANGED', { cameraKey });
-    
-    // Assert mode agreement between UI and Capture Service
-    const uiMode = CameraMode.VISION_CAMERA;
-    const serviceMode = CameraCaptureService.ACTIVE_CAMERA_MODE;
-    if (uiMode !== serviceMode) {
-      CameraLogger.log('CONFIG_ERROR', { reason: `Camera mode mismatch: UI mode is ${uiMode} but Service mode is ${serviceMode}` });
-      return;
+    if (appSettings.keepScreenOn && connectionState === 'STREAMING') {
+      activateKeepAwakeAsync('traffic-stream').catch(() => {});
     }
+    return () => { deactivateKeepAwake('traffic-stream'); };
+  }, [appSettings.keepScreenOn, connectionState]);
 
-    // Delay slightly to ensure native CameraView is ready
-    const timer = setTimeout(() => {
-      if (cameraRef.current) {
-        CameraLogger.log('CAMERA_REF_CHANGED', { hasRef: true });
-        startRealStream(cameraRef.current);
-      } else {
-        CameraLogger.log('CAMERA_REF_CHANGED', { hasRef: false });
-        startRealStream(cameraRef.current);
-      }
-    }, 200);
-
-    return () => {
-      clearTimeout(timer);
-      stopRealStream();
-    };
-  }, [startRealStream, stopRealStream, cameraKey]);
+  // The native preview owns sampling; the service owns uploads. No forced remounts.
+  useEffect(() => {
+    if (connectionState === 'STREAMING') startRealStream(cameraRef.current);
+    else stopRealStream();
+    if (connectionState === 'WAITING') navigation.replace('Waiting');
+    if (connectionState === 'DISCONNECTED' || connectionState === 'ERROR') {
+      navigation.replace('Disconnected', { reason: 'Connection ended. Reconnect to resume streaming.' });
+    }
+    return stopRealStream;
+  }, [connectionState, startRealStream, stopRealStream, navigation]);
 
   const handleStopStreaming = () => {
-    triggerMockStopStream();
-    stopRealStream();
-    navigation.replace('Waiting');
+    requestStopStream(); // Navigation changes only when the server acknowledges STOP.
   };
 
   const handleDisconnectNode = async () => {
@@ -124,9 +113,9 @@ export const StreamingScreen: React.FC<Props> = ({ navigation }) => {
     <View style={styles.container}>
       {/* CameraPreview is a sibling. Explicitly pass mode={CameraMode.VISION_CAMERA} and onFrameSampled */}
       <CameraPreview
-        key={cameraKey}
         cameraRef={cameraRef}
         mode={CameraMode.VISION_CAMERA}
+        isStreaming={connectionState === 'STREAMING'}
         onFrameSampled={handleFrameSampled}
         showOverlayControls={false}
         autofocus="off"
@@ -155,12 +144,14 @@ export const StreamingScreen: React.FC<Props> = ({ navigation }) => {
 
           <View style={styles.statPill}>
             <MaterialCommunityIcons name="signal" size={14} color={AppColors.connected} />
-            <Text style={styles.statVal}>{pingMs || 14} ms</Text>
+            <Text style={styles.statVal}>
+              {frameStats.frameRoundTripMs > 0 ? `${frameStats.frameRoundTripMs} ms frame RTT` : pingMs > 0 ? `${pingMs} ms network` : 'Measuring RTT'}
+            </Text>
           </View>
 
           <View style={styles.statPill}>
             <MaterialCommunityIcons name="video-input-hdmi" size={14} color={AppColors.textSecondary} />
-            <Text style={styles.statVal}>{settings.resolution}</Text>
+            <Text style={styles.statVal}>{frameStats.resolution || settings.resolution}</Text>
           </View>
         </View>
 

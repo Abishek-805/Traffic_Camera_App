@@ -4,7 +4,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors } from '../theme';
-import { useCamera } from '../hooks/useCamera';
+import { useCameraSettings } from '../hooks/useCamera';
 import { CameraMode } from '../types/camera';
 import { VisionCameraPreview } from './VisionCameraPreview';
 import { CameraLogger } from '../utils/logger';
@@ -16,7 +16,8 @@ interface CameraPreviewProps {
   cameraRef?: React.RefObject<any>;
   autofocus?: 'on' | 'off';
   mode?: CameraMode;
-  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number }) => void;
+  isStreaming?: boolean;
+  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number }) => void;
 }
 
 export const CameraPreview: React.FC<CameraPreviewProps> = React.memo(({
@@ -27,9 +28,10 @@ export const CameraPreview: React.FC<CameraPreviewProps> = React.memo(({
   autofocus = 'on',
   mode = CameraMode.PREVIEW_ONLY,
   onFrameSampled,
+  isStreaming = false,
 }) => {
   const [permission, requestPermission] = useCameraPermissions();
-  const { settings, setFacing, toggleTorch } = useCamera();
+  const { settings, setFacing, toggleTorch } = useCameraSettings();
   const instanceIdRef = useRef(`CAM_PREVIEW_${Math.floor(Math.random() * 10000)}`);
   const renderCountRef = useRef(0);
   const prevPropsRef = useRef({ facing: settings.facing, torch: settings.torch, autofocus });
@@ -91,7 +93,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = React.memo(({
   if (mode === CameraMode.VISION_CAMERA && !onBarcodeScanned) {
     return (
       <View style={styles.container}>
-        <VisionCameraPreview cameraRef={cameraRef} onFrameSampled={onFrameSampled}>
+        <VisionCameraPreview cameraRef={cameraRef} onFrameSampled={onFrameSampled} isStreaming={isStreaming}>
           {children}
         </VisionCameraPreview>
         {showOverlayControls && (

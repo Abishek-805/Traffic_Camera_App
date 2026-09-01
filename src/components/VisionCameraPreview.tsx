@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
+import { ConnectionServiceFactory } from '../services/connection/ConnectionServiceFactory';
+import { AppState, View, StyleSheet, Text } from 'react-native';
 import { Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors } from '../theme';
@@ -15,7 +17,7 @@ try {
 
 interface VisionCameraPreviewProps {
   children?: React.ReactNode;
-  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number }) => void;
+  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number }) => void;
   isStreaming?: boolean;
   cameraRef?: React.RefObject<any>;
 }
@@ -41,7 +43,7 @@ export const VisionCameraPreview: React.FC<VisionCameraPreviewProps> = React.mem
     return (
       <View style={styles.darkBackground}>
         <Text style={styles.errorText}>
-          Vision Camera (NitroModules) is not supported in Expo Go. Please use Expo Camera mode.
+          Vision Camera (NitroModules) is not supported in Expo Go. Install a development build or the standalone APK to stream.
         </Text>
       </View>
     );
@@ -58,7 +60,15 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
   const { Camera, useCameraDevice, useCameraPermission } = VisionCamModule;
   const { hasPermission, requestPermission } = useCameraPermission();
   const { settings } = useCameraSettings();
+  const focused = useIsFocused();
+  const previewReady = useRef(false);
+  const previewStartedAt = useRef(0);
   const device = useCameraDevice(settings.facing);
+  const [cameraMounted, setCameraMounted] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [restartNonce, setRestartNonce] = useState(0);
+  const automaticRetries = useRef(0);
+  const recoveryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const instanceIdRef = useRef(`VISION_CAM_${Math.floor(Math.random() * 10000)}`);
   const onFrameSampledRef = useRef(onFrameSampled);
@@ -77,36 +87,99 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
     }
   }, [hasPermission, requestPermission]);
 
-  // Sample hardware GPU snapshots via takeSnapshot() every 500ms (~2 FPS) without interrupting native preview
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const sampling = useRef(false);
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (cameraRef?.current && typeof cameraRef.current.takeSnapshot === 'function') {
-        const now = Date.now();
-        cameraRef.current
-          .takeSnapshot()
-          .then((img: any) => {
-            if (img) {
-              const resized = img.resize(640, 360);
-              const encoded = resized.toEncodedImageData('jpg', 25);
-              const base64 = arrayBufferToBase64(encoded.buffer);
-              if (onFrameSampledRef.current && base64) {
-                onFrameSampledRef.current({
-                  base64,
-                  width: 640,
-                  height: 360,
-                  timestamp: now,
-                });
-              }
-            }
-          })
-          .catch((err: any) => {
-            CameraLogger.log('SNAPSHOT_PROCESS_ERROR', { error: err?.message || String(err) });
-          });
-      }
-    }, 500);
+    const subscription = AppState.addEventListener('change', state => setForeground(state === 'active'));
+    return () => subscription.remove();
+  }, []);
 
-    return () => clearInterval(interval);
-  }, [cameraRef]);
+  // Do not configure VisionCamera during the Android camera-release window
+  // left by the Expo QR scanner. Delaying the component mount (rather than
+  // merely isActive) prevents both engines from opening the same device.
+  useEffect(() => {
+    previewReady.current = false;
+    previewStartedAt.current = 0;
+    setCameraMounted(false);
+    if (!foreground || !focused || !hasPermission || !device) return;
+    const timer = setTimeout(() => setCameraMounted(true), 450);
+    return () => clearTimeout(timer);
+  }, [foreground, focused, hasPermission, device, settings.facing, restartNonce]);
+
+  useEffect(() => () => {
+    if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
+  }, []);
+
+  const retryCamera = () => {
+    if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
+    recoveryTimer.current = null;
+    automaticRetries.current = 0;
+    setCameraError(null);
+    setRestartNonce(value => value + 1);
+  };
+
+  const handleCameraError = (error: any) => {
+    const message = error?.message || String(error) || 'Unable to start the camera.';
+    CameraLogger.log('VISION_CAMERA_ERROR', { message, retry: automaticRetries.current });
+    previewReady.current = false;
+    previewStartedAt.current = 0;
+    setCameraError(message);
+    setCameraMounted(false);
+
+    if (automaticRetries.current < 2) {
+      automaticRetries.current += 1;
+      const retryDelay = 900 * automaticRetries.current;
+      if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
+      recoveryTimer.current = setTimeout(() => {
+        setCameraError(null);
+        setRestartNonce(value => value + 1);
+      }, retryDelay);
+    }
+  };
+
+  // One snapshot at a time. A cancelled capture can never upload into a later session.
+  // Use native async resize/encoding to avoid blocking the JS/UI thread.
+  useEffect(() => {
+    if (!isStreaming || !foreground || !focused || !hasPermission || !cameraMounted) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const sample = async () => {
+      let owned = false;
+      let image: any;
+      let resized: any;
+      const started = Date.now();
+      try {
+        if (previewReady.current && Date.now() - previewStartedAt.current >= 800 &&
+            !sampling.current && cameraRef?.current?.takeSnapshot &&
+            (ConnectionServiceFactory.getInstance().canCaptureFrame?.() ?? true)) {
+          sampling.current = true;
+          owned = true;
+          image = await cameraRef.current.takeSnapshot();
+          if (!cancelled && image) {
+            const maxEdge = settings.resolution === '1080p' ? 1920 : settings.resolution === '720p' ? 1280 : 640;
+            const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+            const width = Math.max(1, Math.round(image.width * scale));
+            const height = Math.max(1, Math.round(image.height * scale));
+            resized = await image.resizeAsync(width, height);
+            const encoded = await resized.toEncodedImageDataAsync('jpg', 65);
+            if (!cancelled) onFrameSampledRef.current?.({
+              base64: arrayBufferToBase64(encoded.buffer), width, height, timestamp: started, captureDurationMs: Date.now() - started,
+            });
+          }
+        }
+      } catch (err: any) {
+        if (!cancelled) CameraLogger.log('SNAPSHOT_PROCESS_ERROR', { error: err?.message || String(err) });
+      } finally {
+        resized?.dispose?.();
+        image?.dispose?.();
+        if (owned) sampling.current = false;
+        const intervalMs = Math.round(1000 / Math.max(1, settings.targetFps));
+        if (!cancelled) timer = setTimeout(sample, Math.max(50, intervalMs - (Date.now() - started)));
+      }
+    };
+    timer = setTimeout(sample, 1000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [cameraRef, isStreaming, foreground, focused, hasPermission, cameraMounted, settings.facing, settings.resolution, settings.targetFps]);
 
   if (!hasPermission) {
     return (
@@ -128,13 +201,48 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
     );
   }
 
+  if (!cameraMounted) {
+    return (
+      <View style={styles.darkBackground}>
+        {cameraError ? (
+          <>
+            <MaterialCommunityIcons name="camera-off" size={48} color={AppColors.disconnected} />
+            <Text style={styles.permissionTitle}>Camera could not start</Text>
+            <Text style={styles.errorText}>{cameraError}</Text>
+            <Button mode="contained" onPress={retryCamera} buttonColor={AppColors.primary} textColor="#000">
+              Retry Camera
+            </Button>
+          </>
+        ) : (
+          <>
+            <MaterialCommunityIcons name="timer-sand" size={48} color={AppColors.primary} />
+            <Text style={styles.permissionTitle}>Preparing camera…</Text>
+          </>
+        )}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Camera
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
-        isActive={true}
+        isActive={foreground && focused}
+        implementationMode="compatible"
+        onStarted={() => CameraLogger.log('VISION_CAMERA_STARTED', { instanceId: instanceIdRef.current })}
+        onError={handleCameraError}
+        onPreviewStarted={() => {
+          automaticRetries.current = 0;
+          setCameraError(null);
+          previewStartedAt.current = Date.now();
+          previewReady.current = true;
+        }}
+        onPreviewStopped={() => {
+          previewReady.current = false;
+          previewStartedAt.current = 0;
+        }}
         torchMode={settings.torch ? 'on' : 'off'}
         resizeMode="cover"
       />

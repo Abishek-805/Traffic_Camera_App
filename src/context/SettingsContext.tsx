@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { AppSettings } from '../types/settings';
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../utils/constants';
+import { CameraLogger } from '../utils/logger';
 import { StorageService } from '../utils/storage';
 
 interface SettingsContextType {
@@ -32,12 +33,14 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
       STORAGE_KEYS.APP_SETTINGS,
       DEFAULT_SETTINGS
     );
+    CameraLogger.debug = loaded.debugMode;
     setSettings(loaded);
     setIsLoading(false);
   };
 
   const updateSettings = async (newSettings: Partial<AppSettings>) => {
     const updated = { ...settings, ...newSettings };
+    CameraLogger.debug = updated.debugMode;
     setSettings(updated);
     await StorageService.setItem(STORAGE_KEYS.APP_SETTINGS, updated);
   };

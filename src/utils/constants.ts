@@ -1,18 +1,19 @@
 export const APP_METADATA = {
   appName: 'SMART TRAFFIC MANAGEMENT SYSTEM',
   moduleName: 'Traffic Camera Node',
-  version: '1.0.0-phase1',
+  version: '1.0.2',
   protocolVersion: '1.0',
 };
 
 export const STORAGE_KEYS = {
   APP_SETTINGS: '@traffic_camera_app_settings',
+  CAMERA_SETTINGS: '@traffic_camera_camera_settings',
   CONNECTION_HISTORY: '@traffic_camera_connection_history',
   LAST_SESSION: '@traffic_camera_last_session',
 };
 
 export const DEFAULT_REST_PORT = Number(process.env.EXPO_PUBLIC_REST_PORT) || 8000;
-export const DEFAULT_WEBSOCKET_PORT = Number(process.env.EXPO_PUBLIC_WEBSOCKET_PORT) || 8001;
+export const DEFAULT_WEBSOCKET_PORT = Number(process.env.EXPO_PUBLIC_WEBSOCKET_PORT) || 8000;
 
 export const DEFAULT_SETTINGS = {
   autoConnect: false,

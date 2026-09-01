@@ -47,6 +47,9 @@ export interface FrameStats {
   captureFailures: number;
   avgEncodeTimeMs: number;
   avgSendTimeMs: number;
+  frameRoundTripMs: number;
+  serverProcessingMs: number;
+  serverQueueMs: number;
   socketBufferPeakBytes: number;
   currentCaptureIntervalMs: number;
   lastFrameTime: number;

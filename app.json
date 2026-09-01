@@ -2,7 +2,7 @@
   "expo": {
     "name": "Traffic Camera Node",
     "slug": "traffic-camera-node",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -28,9 +28,14 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "blockedPermissions": [
         "android.permission.BATTERY_STATS",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "package": "com.smile_505.trafficcameranode"
     },
@@ -41,9 +46,11 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Traffic Camera Node requires camera access to scan QR codes and capture video for traffic management."
+          "cameraPermission": "Traffic Camera Node requires camera access to scan QR codes and capture video for traffic management.",
+          "recordAudioAndroid": false
         }
-      ]
+      ],
+      "./plugins/withTrustedLan"
     ],
     "extra": {
       "eas": {

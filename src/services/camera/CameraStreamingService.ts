@@ -8,7 +8,7 @@ import { CameraLogger } from '../../utils/logger';
 export class CameraStreamingService implements ICameraStreamingService {
   private stats: FrameStats = {
     currentFps: 0,
-    targetFps: 30,
+    targetFps: 2,
     framesSent: 0,
     droppedFrames: 0,
     overwriteFrames: 0,
@@ -17,13 +17,15 @@ export class CameraStreamingService implements ICameraStreamingService {
     captureFailures: 0,
     avgEncodeTimeMs: 0,
     avgSendTimeMs: 0,
+    frameRoundTripMs: 0,
+    serverProcessingMs: 0,
+    serverQueueMs: 0,
     socketBufferPeakBytes: 0,
     currentCaptureIntervalMs: 500,
     lastFrameTime: Date.now(),
     resolution: '640x360',
   };
 
-  private mockTimer: NodeJS.Timeout | null = null;
   private statsListeners: Set<(stats: FrameStats) => void> = new Set();
   private healthListeners: Set<(state: CameraHealthState) => void> = new Set();
 
@@ -36,75 +38,8 @@ export class CameraStreamingService implements ICameraStreamingService {
   private unsubCaptureState: (() => void) | null = null;
   private unsubUploadResult: (() => void) | null = null;
 
-  public startMockStream(targetFps: number = 30): void {
-    this.stopMockStream();
-    this.stopRealStream();
-    CameraLogger.log('Camera started', { mode: 'mock' });
-    this.setHealthState(CameraHealthState.Starting);
-    this.setHealthState(CameraHealthState.Ready);
 
-    this.stats.targetFps = targetFps;
-    this.stats.framesSent = 0;
-    this.stats.droppedFrames = 0;
-    this.stats.overwriteFrames = 0;
-    this.stats.avgEncodeTimeMs = 25;
-    this.stats.avgSendTimeMs = 12;
-
-    const interval = Math.floor(1000 / targetFps);
-    const sampleFrameBase64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAFoAoADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD+/+iiigAooooAKKKKACiiigAooooAKKKKACiiigAprotocol";
-
-    this.setHealthState(CameraHealthState.Streaming);
-    this.mockTimer = setInterval(() => {
-      this.stats.framesSent += 1;
-      this.stats.lastFrameTime = Date.now();
-      
-      const fpsJitter = (Math.random() * 1.5 - 0.5);
-      this.stats.currentFps = Math.min(30, Math.max(24, Math.round((targetFps + fpsJitter) * 10) / 10));
-
-      if (Math.random() < 0.02) {
-        this.stats.droppedFrames += 1;
-      }
-
-      try {
-        const { ConnectionServiceFactory } = require('../connection/ConnectionServiceFactory');
-        const connService = ConnectionServiceFactory.getInstance();
-        const info = connService.getConnectionInfo();
-        if (connService.getState() === 'STREAMING' || connService.getState() === 'REGISTERED') {
-          const direction = info?.assignedLane?.split(' ')[0]?.toLowerCase() || 'north';
-          connService.sendMessage({
-            version: '1.0',
-            type: 'VIDEO_FRAME',
-            timestamp: Date.now(),
-            payload: {
-              node_id: info?.cameraId || 'CAM-001',
-              direction: direction,
-              camera_direction: direction,
-              frame_data: sampleFrameBase64,
-              timestamp: Date.now() / 1000,
-            },
-          });
-        }
-      } catch (e) {
-        // Ignore errors in mock background timer
-      }
-
-      this.notifyStatsListeners();
-    }, interval);
-  }
-
-  public stopMockStream(): void {
-    if (this.mockTimer) {
-      clearInterval(this.mockTimer);
-      this.mockTimer = null;
-      CameraLogger.log('Camera stopped', { mode: 'mock' });
-    }
-    this.stats.currentFps = 0;
-    this.setHealthState(CameraHealthState.Idle);
-    this.notifyStatsListeners();
-  }
-
-  public startRealStream(cameraRef: any, settings: CameraSettings, onCameraRestartRequested: () => void): void {
-    this.stopMockStream();
+  public startRealStream(cameraRef: any, settings: CameraSettings): void {
     this.stopRealStream();
 
     this.stats.targetFps = settings.targetFps;
@@ -123,7 +58,7 @@ export class CameraStreamingService implements ICameraStreamingService {
     this.frameTimestamps = [];
 
     // Instantiate Services
-    this.captureService = new CameraCaptureService(onCameraRestartRequested);
+    this.captureService = new CameraCaptureService();
     this.uploadWorker = new UploadWorker();
 
     // Setup Capture Callback
@@ -178,6 +113,12 @@ export class CameraStreamingService implements ICameraStreamingService {
           const connService = ConnectionServiceFactory.getInstance();
           const currentBuffer = connService.getBufferedAmount ? connService.getBufferedAmount() : 0;
           this.stats.socketBufferPeakBytes = Math.max(this.stats.socketBufferPeakBytes, currentBuffer);
+          const latency = connService.getFrameLatency?.();
+          if (latency) {
+            this.stats.frameRoundTripMs = latency.roundTripMs;
+            this.stats.serverProcessingMs = latency.serverMs;
+            this.stats.serverQueueMs = latency.queueMs;
+          }
         } catch {
           // ignore
         }
@@ -209,18 +150,21 @@ export class CameraStreamingService implements ICameraStreamingService {
     this.captureService.start(cameraRef, { quality, maxWidth: width, maxHeight: height });
   }
 
-  public handleFrameSampled(frameData: { base64: string; width: number; height: number; timestamp: number }): void {
+  public handleFrameSampled(frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number }): void {
     if (this.uploadWorker) {
+      this.setHealthState(CameraHealthState.Streaming);
+      this.stats.resolution = `${frameData.width}x${frameData.height}`;
       this.uploadWorker.enqueue({
         base64: frameData.base64,
         width: frameData.width,
         height: frameData.height,
-        captureDurationMs: 0,
+        captureDurationMs: frameData.captureDurationMs ?? 0,
         timestamp: frameData.timestamp,
       });
       this.stats.overwriteFrames = this.uploadWorker.getOverwriteCount();
       this.stats.droppedFrames = this.uploadWorker.getDroppedFrameCount();
       this.stats.capturedFrames += 1;
+      this.stats.avgEncodeTimeMs = Math.round(frameData.captureDurationMs ?? 0);
 
       const now = Date.now();
       this.frameTimestamps.push(now);

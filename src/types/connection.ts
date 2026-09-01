@@ -19,6 +19,7 @@ export interface QRPayload {
   protocol: 'websocket' | 'http' | 'ws' | 'wss';
   secure: boolean;
   defaultLane?: string;
+  camera_direction?: string;
 }
 
 export interface ConnectionInfo {

@@ -127,7 +127,7 @@ export class MockConnectionService implements IConnectionService {
     return 'None (Active Session)';
   }
 
-  public triggerMockStartStream(): void {
+  public requestStartStream(): void {
     if (this.state === 'WAITING' && this.connectionInfo) {
       this.setState('STREAMING');
       const startMsg = MessageFactory.createMessage('START_STREAM', {
@@ -139,7 +139,7 @@ export class MockConnectionService implements IConnectionService {
     }
   }
 
-  public triggerMockStopStream(): void {
+  public requestStopStream(): void {
     if (this.state === 'STREAMING' && this.connectionInfo) {
       this.setState('WAITING');
       const stopMsg = MessageFactory.createMessage('STOP_STREAM', {

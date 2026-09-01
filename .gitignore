@@ -4,6 +4,8 @@ node_modules/
 # expo & build output
 .expo/
 dist/
+dist-android/
+dist-android-*/
 web-build/
 *.tmp
 .freebuff/

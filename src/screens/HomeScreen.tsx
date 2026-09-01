@@ -10,15 +10,12 @@ import { useConnection } from '../hooks/useConnection';
 import { useCameraStats } from '../hooks/useCamera';
 import { AppColors } from '../theme';
 
-import { useSettings } from '../hooks/useSettings';
-import { DEFAULT_SETTINGS } from '../utils/constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const { connectionState, connectionInfo, pingMs } = useConnection();
   const { frameStats } = useCameraStats();
-  const { settings: appSettings } = useSettings();
 
   const handleStartConnection = () => {
     if (connectionState === 'WAITING') {
@@ -28,21 +25,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     } else {
       navigation.navigate('Scanner');
     }
-  };
-
-  const handleDirectConnect = () => {
-    const host = appSettings.serverHost || DEFAULT_SETTINGS.serverHost;
-    const port = appSettings.serverPort || DEFAULT_SETTINGS.serverPort;
-    const direction = appSettings.cameraDirection || DEFAULT_SETTINGS.cameraDirection;
-    const session = `CAM-${direction}-SESSION`;
-    const token = `auth_token_${direction.toLowerCase()}`;
-
-    navigation.navigate('Connecting', {
-      server: host,
-      port,
-      session,
-      token,
-    });
   };
 
   return (
@@ -85,20 +67,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                 : 'Scan QR to Pair Node'}
           </Button>
 
-          {connectionState === 'DISCONNECTED' && (
-            <Button
-              mode="contained-tonal"
-              onPress={handleDirectConnect}
-              buttonColor="rgba(0, 229, 255, 0.15)"
-              textColor={AppColors.primary}
-              contentStyle={styles.btnContent}
-              labelStyle={styles.btnLabelSmall}
-              icon="wifi-check"
-            >
-              Direct Connect ({appSettings.serverHost || DEFAULT_SETTINGS.serverHost}:{appSettings.serverPort || DEFAULT_SETTINGS.serverPort} - {appSettings.cameraDirection || DEFAULT_SETTINGS.cameraDirection})
-            </Button>
-          )}
-
           <View style={styles.rowBtns}>
             <Button
               mode="outlined"
@@ -122,11 +90,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </Surface>
 
-        {/* Demo Fast-Connect Mock Trigger for Testing */}
         <View style={styles.devNoticeBox}>
           <MaterialCommunityIcons name="information" size={18} color={AppColors.primary} />
           <Text style={styles.devNoticeText}>
-            Phase 1 Mode: Scanning QR code simulates laptop handshake, device registration, and capability exchange.
+            Scan the dashboard QR to connect to the laptop. Native Android capture requires an installed app build; Expo Go cannot stream.
           </Text>
         </View>
       </ScrollView>
@@ -177,10 +144,6 @@ const styles = StyleSheet.create({
   },
   btnLabel: {
     fontSize: 15,
-    fontWeight: '700',
-  },
-  btnLabelSmall: {
-    fontSize: 13,
     fontWeight: '700',
   },
   rowBtns: {

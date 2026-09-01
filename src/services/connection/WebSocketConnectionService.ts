@@ -13,6 +13,14 @@ export class WebSocketConnectionService implements IConnectionService {
   private stateListeners: Set<StateChangeListener> = new Set();
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private currentPing: number = 0;
+  private pendingFrame: { id: string; sent: number } | null = null;
+  private frameLatency: { roundTripMs: number; serverMs: number; queueMs: number } | null = null;
+  public canCaptureFrame(): boolean {
+    return this.state === 'STREAMING' && this.getBufferedAmount() < 64 * 1024 &&
+      (!this.pendingFrame || Date.now() - this.pendingFrame.sent > 1500);
+  }
+  public getFrameLatency() { return this.frameLatency; }
+
 
   // Bounded Exponential Auto-Reconnect State
   private reconnectAttempts: number = 0;
@@ -25,6 +33,7 @@ export class WebSocketConnectionService implements IConnectionService {
   private lastDisconnectReason: string = 'None (Active Session)';
 
   public async connect(qrPayload: QRPayload): Promise<ConnectionInfo> {
+    const hadEstablishedSession = this.connectionInfo !== null;
     this.lastQRPayload = qrPayload;
     this.isManualDisconnect = false;
 
@@ -45,7 +54,10 @@ export class WebSocketConnectionService implements IConnectionService {
     }
     this.stopHeartbeat();
     this.stopStableConnectionTimer();
+    this.cancelAutoReconnect();
 
+    this.pendingFrame = null;
+    this.frameLatency = null;
     this.setState('CONNECTING');
 
     return new Promise((resolve, reject) => {
@@ -64,13 +76,29 @@ export class WebSocketConnectionService implements IConnectionService {
         this.socket = new WebSocket(wsUrl);
 
         let isResolved = false;
+        let registeredOnSocket = false;
+        const currentSocket = this.socket;
+        const handshakeTimer = setTimeout(() => {
+          if (!isResolved) {
+            isResolved = true;
+            this.setState('ERROR');
+            reject(new Error('Registration timed out. Check the server address and port.'));
+            currentSocket.close();
+          }
+        }, 10000);
 
         this.socket.onopen = async () => {
           try {
             const deviceInfo = await DeviceUtils.getDeviceInfo();
             const capabilities = DeviceUtils.getCameraCapabilities();
 
+            if (this.socket !== currentSocket) return;
+            const direction = (qrPayload.camera_direction || qrPayload.defaultLane?.split(' ')[0] ||
+              qrPayload.session.match(/north|south|east|west/i)?.[0] || '').toLowerCase();
+            if (!['north', 'east', 'south', 'west'].includes(direction)) throw new Error('Choose a valid camera direction.');
             const registerPayload: RegisterCameraPayload = {
+              node_id: qrPayload.session,
+              camera_direction: direction,
               device: deviceInfo,
               capabilities: capabilities,
               session: qrPayload.session,
@@ -85,27 +113,52 @@ export class WebSocketConnectionService implements IConnectionService {
             this.sendMessage(regMsg);
           } catch (err) {
             this.setState('ERROR');
-            reject(err);
+            if (!isResolved) {
+              isResolved = true;
+              reject(err);
+            }
+            currentSocket.close();
           }
         };
 
         this.socket.onmessage = (event: WebSocketMessageEvent) => {
           try {
             const data = JSON.parse(event.data);
+            if (data?.type === 'FRAME_ACK') {
+              const payload = data.payload || {};
+              if (this.pendingFrame && payload.frame_id === this.pendingFrame.id) {
+                const roundTripMs = Math.max(0, Date.now() - this.pendingFrame.sent);
+                this.pendingFrame = null;
+                this.frameLatency = {
+                  roundTripMs,
+                  serverMs: Number.isFinite(payload.server_processing_ms) ? payload.server_processing_ms : 0,
+                  queueMs: Number.isFinite(payload.queue_wait_ms) ? payload.queue_wait_ms : 0,
+                };
+              }
+              // Frame acknowledgements are transport telemetry, not navigation commands.
+              return;
+            }
             if (!ProtocolValidator.isValidSocketMessage(data)) {
               return;
             }
 
             const msg: SocketMessage = data;
-            this.notifyMessage(msg);
 
-            if (msg.type === 'REGISTRATION_ACK') {
+            if (msg.type === 'ERROR') {
+              clearTimeout(handshakeTimer);
+              if (!isResolved) { isResolved = true; reject(new Error(msg.payload?.message || 'Registration rejected')); }
+              if (msg.payload?.error_code === 'DIRECTION_OCCUPIED') this.isManualDisconnect = true;
+              if (msg.payload?.error_code === 'UNAUTHORIZED_SESSION' || this.state === 'CONNECTING') currentSocket.close();
+            } else if (msg.type === 'REGISTRATION_ACK') {
+              clearTimeout(handshakeTimer);
               const payload = msg.payload || {};
+              registeredOnSocket = true;
+              const sessionToken = payload.session_token || qrPayload.token;
               this.connectionInfo = {
                 server: qrPayload.server,
                 port: qrPayload.port,
                 session: qrPayload.session,
-                token: qrPayload.token,
+                token: sessionToken,
                 expires: qrPayload.expires,
                 protocol: qrPayload.protocol,
                 secure: qrPayload.secure,
@@ -114,6 +167,8 @@ export class WebSocketConnectionService implements IConnectionService {
                 pingMs: 0,
                 connectedAt: Date.now(),
               };
+              // Re-registration uses the server-issued token after the one-time QR is consumed.
+              this.lastQRPayload = { ...qrPayload, token: sessionToken };
 
               this.setState('REGISTERED');
               this.setState('WAITING');
@@ -125,8 +180,8 @@ export class WebSocketConnectionService implements IConnectionService {
                 resolve(this.connectionInfo);
               }
             } else if (msg.type === 'HEARTBEAT_ACK') {
-              if (msg.timestamp) {
-                this.currentPing = Math.max(1, Date.now() - msg.timestamp);
+              if (msg.payload?.client_timestamp) {
+                this.currentPing = Math.max(0, Date.now() - msg.payload.client_timestamp);
               } else if (msg.payload?.pingMs) {
                 this.currentPing = msg.payload.pingMs;
               }
@@ -145,6 +200,7 @@ export class WebSocketConnectionService implements IConnectionService {
                 }
               }
             }
+            this.notifyMessage(msg);
           } catch (e) {
             console.warn('[WebSocketConnectionService] Message parsing error:', e);
           }
@@ -160,6 +216,7 @@ export class WebSocketConnectionService implements IConnectionService {
         };
 
         this.socket.onclose = (event: WebSocketCloseEvent) => {
+          clearTimeout(handshakeTimer);
           this.stopHeartbeat();
           this.stopStableConnectionTimer();
 
@@ -169,7 +226,8 @@ export class WebSocketConnectionService implements IConnectionService {
             this.lastDisconnectReason = `Socket closed (code ${event.code})`;
           }
 
-          if (!this.isManualDisconnect && this.lastQRPayload && this.reconnectAttempts < this.maxReconnectAttempts) {
+          if (!this.isManualDisconnect && (registeredOnSocket || hadEstablishedSession) &&
+              this.lastQRPayload && this.reconnectAttempts < this.maxReconnectAttempts) {
             this.scheduleAutoReconnect();
           } else {
             if (this.state !== 'DISCONNECTED') {
@@ -198,7 +256,7 @@ export class WebSocketConnectionService implements IConnectionService {
 
     if (this.socket && this.socket.readyState === WebSocket.OPEN && this.connectionInfo) {
       try {
-        const discMsg = MessageFactory.createMessage('DISCONNECT', { reason }, this.connectionInfo.token);
+        const discMsg = MessageFactory.createMessage('DISCONNECT', { reason, node_id: this.connectionInfo.cameraId }, this.connectionInfo.token);
         this.sendMessage(discMsg);
       } catch {
         // Ignore send errors during shutdown
@@ -221,40 +279,24 @@ export class WebSocketConnectionService implements IConnectionService {
 
     this.setState('RECONNECTING');
 
-    const qrPayload: QRPayload = {
-      version: '1.0',
-      server: this.connectionInfo.server,
-      port: this.connectionInfo.port,
-      session: this.connectionInfo.session,
-      token: this.connectionInfo.token,
-      expires: this.connectionInfo.expires,
-      protocol: (this.connectionInfo.protocol as any) || 'websocket',
-      secure: this.connectionInfo.secure,
-      defaultLane: this.connectionInfo.assignedLane,
-    };
-
-    return this.connect(qrPayload);
+    if (!this.lastQRPayload) throw new Error('Scan a connection QR code first.');
+    return this.connect(this.lastQRPayload);
   }
 
-  public triggerMockStartStream(): void {
-    this.setState('STREAMING');
-    this.notifyMessage({
-      type: 'START_STREAM',
-      timestamp: Date.now(),
-      payload: { target_fps: 30, resolution: '1080p' },
-    });
+  public requestStartStream(): void {
+    this.sendMessage(MessageFactory.createMessage('START_STREAM', {}));
   }
 
-  public triggerMockStopStream(): void {
-    this.setState('WAITING');
-    this.notifyMessage({
-      type: 'STOP_STREAM',
-      timestamp: Date.now(),
-      payload: { reason: 'User paused' },
-    });
+  public requestStopStream(): void {
+    this.sendMessage(MessageFactory.createMessage('STOP_STREAM', {}));
   }
 
   public sendMessage(message: SocketMessage): boolean {
+    if (this.connectionInfo && message.type !== 'REGISTER_CAMERA') {
+      message = { ...message, token: this.connectionInfo.token,
+        payload: { ...message.payload, node_id: this.connectionInfo.cameraId,
+          session_token: this.connectionInfo.token } };
+    }
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       console.warn('[WebSocketConnectionService] Socket is not OPEN. Message dropped:', message.type);
       return false;
@@ -270,6 +312,7 @@ export class WebSocketConnectionService implements IConnectionService {
 
     try {
       this.socket.send(JSON.stringify(message));
+      if (message.type === 'VIDEO_FRAME') this.pendingFrame = { id: message.payload.frame_id, sent: Date.now() };
       return true;
     } catch (e) {
       console.warn('[WebSocketConnectionService] Send failed:', e);

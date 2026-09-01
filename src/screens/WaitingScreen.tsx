@@ -14,7 +14,7 @@ import { AppColors } from '../theme';
 type Props = NativeStackScreenProps<RootStackParamList, 'Waiting'>;
 
 export const WaitingScreen: React.FC<Props> = ({ navigation }) => {
-  const { connectionState, connectionInfo, pingMs, triggerMockStartStream, disconnect } = useConnection();
+  const { connectionState, connectionInfo, pingMs, requestStartStream, disconnect } = useConnection();
   const { frameStats } = useCameraStats();
 
   useEffect(() => {
@@ -23,8 +23,8 @@ export const WaitingScreen: React.FC<Props> = ({ navigation }) => {
     }
   }, [connectionState, navigation]);
 
-  const handleSimulateStartStream = () => {
-    triggerMockStartStream();
+  const handleRequestStartStream = () => {
+    requestStartStream();
   };
 
   const handleDisconnect = async () => {
@@ -64,13 +64,13 @@ export const WaitingScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.actionContainer}>
           <Button
             mode="contained"
-            onPress={handleSimulateStartStream}
+            onPress={handleRequestStartStream}
             buttonColor={AppColors.primary}
             textColor="#000"
             style={styles.primaryBtn}
             icon="play-circle"
           >
-            Simulate Laptop "START_STREAM" Command
+            Request streaming
           </Button>
 
           <Button

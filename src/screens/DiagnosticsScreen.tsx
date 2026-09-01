@@ -91,8 +91,11 @@ export const DiagnosticsScreen: React.FC<Props> = ({ navigation }) => {
         <Panel title="STREAM PIPELINE" icon="video-wireless" iconColor="#A5D6A7">
           <Row label="Frames Uploaded" value={`${d.framesSent}`} valueColor={AppColors.connected} />
           <Row label="Avg Upload Latency" value={`${d.avgSendTimeMs} ms`} />
+          <Row label="Processed Frame RTT" value={d.frameRoundTripMs > 0 ? `${d.frameRoundTripMs} ms` : 'Measuring'} />
+          <Row label="Server Processing" value={d.serverProcessingMs > 0 ? `${d.serverProcessingMs} ms` : '—'} />
+          <Row label="Server Queue Wait" value={d.serverQueueMs > 0 ? `${d.serverQueueMs} ms` : '—'} />
           <Row label="Avg Capture Duration" value={`${d.avgEncodeTimeMs} ms`} />
-          <Row label="Resolution" value={d.fps > 0 ? '640×360 @ Q=0.25' : '—'} />
+          <Row label="Encoded Resolution" value={d.fps > 0 ? d.resolution : '—'} />
           <Row label="Last Frame" value={d.lastFrameTime ? new Date(d.lastFrameTime).toLocaleTimeString() : '—'} />
         </Panel>
 

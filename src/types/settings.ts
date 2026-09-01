@@ -23,6 +23,10 @@ export interface NodeHealthMetrics {
   framesSent: number;
   avgEncodeTimeMs: number;
   avgSendTimeMs: number;
+  frameRoundTripMs: number;
+  serverProcessingMs: number;
+  serverQueueMs: number;
+  resolution: string;
   socketBufferPeakBytes: number;
   currentCaptureIntervalMs: number;
   batteryLevel: number;

@@ -5,6 +5,7 @@ export interface ICameraService {
   getSettings(): CameraSettings;
   setFacing(facing: CameraType): void;
   setResolution(resolution: VideoQuality): void;
+  setTargetFps(targetFps: number): void;
   setTorch(enabled: boolean): void;
   setZoom(zoom: number): void;
   requestPermissions(): Promise<boolean>;

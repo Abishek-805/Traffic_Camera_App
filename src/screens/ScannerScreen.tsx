@@ -1,18 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
-import { Button, Text } from 'react-native-paper';
+import { ActivityIndicator, Text } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { QRScanner } from '../components/QRScanner';
 import { Header } from '../components/Header';
 import { QRCodeService } from '../services/qr/QRCodeService';
 import { AppColors } from '../theme';
-import { DEFAULT_SETTINGS } from '../utils/constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Scanner'>;
 
 export const ScannerScreen: React.FC<Props> = ({ navigation }) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (transitionTimer.current) clearTimeout(transitionTimer.current);
+  }, []);
 
   const handleBarCodeScanned = (rawText: string) => {
     if (isProcessing) return;
@@ -20,12 +24,12 @@ export const ScannerScreen: React.FC<Props> = ({ navigation }) => {
 
     try {
       const payload = QRCodeService.parseQRPayload(rawText);
-      navigation.replace('Connecting', {
-        server: payload.server,
-        port: payload.port,
-        session: payload.session,
-        token: payload.token,
-      });
+      // Unmount Expo Camera before opening VisionCamera. Android releases the
+      // physical camera asynchronously, so an immediate screen replacement can
+      // otherwise make the second camera session fail with "camera in use".
+      transitionTimer.current = setTimeout(() => {
+        navigation.replace('Connecting', { payload });
+      }, 850);
     } catch (err: any) {
       Alert.alert('Invalid QR Code', err.message || 'The scanned QR code is not a valid Traffic Camera Node token.', [
         { text: 'Try Again', onPress: () => setIsProcessing(false) },
@@ -33,40 +37,23 @@ export const ScannerScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const handleSimulateScan = () => {
-    const mockPayloadJSON = JSON.stringify({
-      version: '1.0',
-      server: DEFAULT_SETTINGS.serverHost,
-      port: DEFAULT_SETTINGS.serverPort,
-      session: 'CAM-LANE1-9F8A',
-      token: 'auth_token_demo_9df7c6ab',
-      expires: Date.now() + 3600000,
-      protocol: 'websocket',
-      secure: false,
-      defaultLane: 'North Intersection - Lane 1',
-    });
-    handleBarCodeScanned(mockPayloadJSON);
-  };
-
   return (
     <View style={styles.container}>
-      <Header title="Scan Authorization QR" showBack onBack={() => navigation.goBack()} />
+      <Header title="Scan Camera Pairing QR" showBack onBack={() => navigation.goBack()} />
 
       <View style={styles.scannerWrapper}>
-        <QRScanner onScanned={handleBarCodeScanned} />
+        {isProcessing ? (
+          <View style={styles.releasingCamera}>
+            <ActivityIndicator animating size="large" color={AppColors.primary} />
+            <Text style={styles.releasingTitle}>QR accepted</Text>
+            <Text style={styles.releasingText}>Releasing the scanner camera before starting the traffic stream…</Text>
+          </View>
+        ) : (
+          <QRScanner onScanned={handleBarCodeScanned} />
+        )}
       </View>
 
-      <View style={styles.bottomBar}>
-        <Button
-          mode="contained-tonal"
-          onPress={handleSimulateScan}
-          buttonColor={AppColors.surface}
-          textColor={AppColors.primary}
-          style={styles.simBtn}
-        >
-          Simulate Laptop QR Scan (Phase 1)
-        </Button>
-      </View>
+
     </View>
   );
 };
@@ -78,6 +65,24 @@ const styles = StyleSheet.create({
   },
   scannerWrapper: {
     flex: 1,
+  },
+  releasingCamera: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    gap: 14,
+  },
+  releasingTitle: {
+    color: AppColors.textPrimary,
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  releasingText: {
+    color: AppColors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
   bottomBar: {
     position: 'absolute',

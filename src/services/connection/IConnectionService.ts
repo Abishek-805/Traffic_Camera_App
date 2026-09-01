@@ -15,9 +15,11 @@ export interface IConnectionService {
   getConnectionInfo(): ConnectionInfo | null;
   getPingLatency(): number;
   getBufferedAmount(): number;
+  canCaptureFrame?(): boolean;
+  getFrameLatency?(): { roundTripMs: number; serverMs: number; queueMs: number } | null;
   getReconnectAttempts(): number;
   getLastReconnectDelayMs(): number;
   getLastDisconnectReason(): string;
-  triggerMockStartStream?: () => void;
-  triggerMockStopStream?: () => void;
+  requestStartStream: () => void;
+  requestStopStream: () => void;
 }

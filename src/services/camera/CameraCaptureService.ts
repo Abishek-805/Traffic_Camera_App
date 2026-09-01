@@ -23,17 +23,12 @@ export class CameraCaptureService implements ICameraCaptureService {
   private isStopped: boolean = true;
   private cameraRef: any = null;
   private options: CaptureOptions = { quality: 0.5, maxWidth: 1920, maxHeight: 1080 };
-  private onCameraRestartRequested: (() => void) | null = null;
   private restartCount: number = 0;
   private maxRestarts: number = 3;
   private restartWindowMs: number = 30000; // max 3 restarts per 30s
   private lastRestartTime: number = 0;
 
-  constructor(onCameraRestartRequested?: () => void) {
-    if (onCameraRestartRequested) {
-      this.onCameraRestartRequested = onCameraRestartRequested;
-    }
-  }
+  constructor() {}
 
   public getState(): CameraHealthState {
     return this.state;
@@ -66,7 +61,9 @@ export class CameraCaptureService implements ICameraCaptureService {
     CameraLogger.log('Camera started');
     this.setState(CameraHealthState.Starting);
     this.setState(CameraHealthState.Ready);
-    this.scheduleNextCapture(this.baseIntervalMs);
+    if (CameraCaptureService.ACTIVE_CAMERA_MODE === CameraMode.LEGACY_SNAPSHOT) {
+      this.scheduleNextCapture(this.baseIntervalMs);
+    }
   }
 
   public stop(): void {

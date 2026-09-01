@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator, Surface, Button } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -7,56 +7,51 @@ import { RootStackParamList } from '../types/navigation';
 import { Header } from '../components/Header';
 import { useConnection } from '../hooks/useConnection';
 import { AppColors } from '../theme';
-import { QRPayload } from '../types/connection';
-import { DEFAULT_SETTINGS } from '../utils/constants';
+
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Connecting'>;
 
 export const ConnectingScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { connectWithQR } = useConnection();
-  const [step, setStep] = useState<number>(1);
+  const { connectWithQR, disconnect } = useConnection();
+  const mounted = useRef(true);
+  const attempt = useRef(0);
+  const connected = useRef(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const server = route.params?.server || DEFAULT_SETTINGS.serverHost;
-  const port = route.params?.port || DEFAULT_SETTINGS.serverPort;
-  const session = route.params?.session || 'CAM-SESSION-9F8A';
-  const token = route.params?.token || 'auth_token_demo';
+  const payload = route.params.payload;
+  const { server, port, session } = payload;
+
+  const startHandshake = useCallback(async () => {
+    const attemptId = ++attempt.current;
+    setErrorMsg(null);
+    try {
+      if (payload.expires <= Date.now()) throw new Error('Pairing QR expired. Scan a new code.');
+      await connectWithQR(payload);
+      if (mounted.current && attempt.current === attemptId) {
+        connected.current = true;
+        navigation.replace('Waiting');
+      }
+    } catch (err: any) {
+      if (mounted.current && attempt.current === attemptId) {
+        setErrorMsg(err.message || 'Connection to laptop timed out.');
+      }
+    }
+  }, [connectWithQR, navigation, payload]);
 
   useEffect(() => {
+    mounted.current = true;
     startHandshake();
-  }, []);
+    return () => {
+      mounted.current = false;
+      attempt.current += 1;
+      if (!connected.current) disconnect('Pairing cancelled').catch(() => {});
+    };
+  }, [disconnect, startHandshake]);
 
-  const startHandshake = async () => {
-    setErrorMsg(null);
-    setStep(1);
-
-    try {
-      const payload: QRPayload = {
-        version: '1.0',
-        server,
-        port,
-        session,
-        token,
-        expires: Date.now() + 3600000,
-        protocol: 'websocket',
-        secure: false,
-        defaultLane: 'North Intersection - Lane 1',
-      };
-
-      // Step 1: Network socket connection
-      await new Promise((res) => setTimeout(res, 600));
-      setStep(2); // Step 2: Register device & send camera capabilities
-
-      await new Promise((res) => setTimeout(res, 700));
-      setStep(3); // Step 3: Await laptop Registration ACK
-
-      await connectWithQR(payload);
-      await new Promise((res) => setTimeout(res, 500));
-
-      navigation.replace('Waiting');
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Connection to laptop timed out.');
-    }
+  const cancelPairing = async () => {
+    attempt.current += 1;
+    await disconnect('Pairing cancelled');
+    navigation.replace('Home');
   };
 
   return (
@@ -74,42 +69,12 @@ export const ConnectingScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
 
           <Text style={styles.targetText}>{server}:{port}</Text>
-          <Text style={styles.sessionText}>Session Token: {session}</Text>
+          <Text style={styles.sessionText}>Node session: {session}</Text>
 
           {!errorMsg ? (
             <View style={styles.stepsContainer}>
-              <View style={styles.stepRow}>
-                <MaterialCommunityIcons
-                  name={step >= 1 ? 'check-circle' : 'radiobox-blank'}
-                  size={20}
-                  color={step >= 1 ? AppColors.connected : AppColors.textMuted}
-                />
-                <Text style={[styles.stepText, step >= 1 && styles.activeStep]}>
-                  Establishing WebSocket transport
-                </Text>
-              </View>
-
-              <View style={styles.stepRow}>
-                <MaterialCommunityIcons
-                  name={step >= 2 ? 'check-circle' : 'radiobox-blank'}
-                  size={20}
-                  color={step >= 2 ? AppColors.connected : AppColors.textMuted}
-                />
-                <Text style={[styles.stepText, step >= 2 && styles.activeStep]}>
-                  Exchanging Device Info & Camera Capabilities
-                </Text>
-              </View>
-
-              <View style={styles.stepRow}>
-                <MaterialCommunityIcons
-                  name={step >= 3 ? 'check-circle' : 'radiobox-blank'}
-                  size={20}
-                  color={step >= 3 ? AppColors.connected : AppColors.textMuted}
-                />
-                <Text style={[styles.stepText, step >= 3 && styles.activeStep]}>
-                  Awaiting Laptop Registration ACK
-                </Text>
-              </View>
+              <Text style={styles.stepText}>Connecting to {payload.defaultLane || payload.camera_direction}…</Text>
+              <Text style={styles.stepText}>Waiting for server registration acknowledgment.</Text>
             </View>
           ) : (
             <View style={styles.errorBox}>
@@ -118,7 +83,7 @@ export const ConnectingScreen: React.FC<Props> = ({ route, navigation }) => {
                 <Button mode="contained" onPress={startHandshake} buttonColor={AppColors.primary} textColor="#000">
                   Retry Handshake
                 </Button>
-                <Button mode="outlined" onPress={() => navigation.replace('Home')} textColor={AppColors.textPrimary}>
+                <Button mode="outlined" onPress={cancelPairing} textColor={AppColors.textPrimary}>
                   Cancel
                 </Button>
               </View>

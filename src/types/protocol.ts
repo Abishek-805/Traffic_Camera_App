@@ -25,6 +25,8 @@ export interface SocketMessage<T = any> {
 }
 
 export interface RegisterCameraPayload {
+  camera_direction: string;
+  node_id: string;
   device: DeviceInfo;
   capabilities: CameraCapabilities;
   session: string;
