@@ -47,8 +47,9 @@ npx eas-cli build --platform android --profile preview --non-interactive
 ```
 
 The `preview` profile produces an internally distributed, installable release APK
-signed with the project's remote Expo credentials. The 1 September validation build
-completed as EAS build `643a74eb-9a6d-4228-b6b4-2e99fc0b7571`.
+signed with the project's remote Expo credentials. The VisionCamera RawProps and
+camera-activation/torch lifecycle repairs completed native validation on 2 September
+as EAS build `192d464e-2573-4fcb-b575-57e7c361a0e2` (app 1.0.3, Android build 4).
 
 The checked-in preview build targets `arm64-v8a`, which covers modern physical
 Android phones while avoiding unused x86 emulator and 32-bit native libraries.

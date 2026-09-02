@@ -65,6 +65,7 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
   const previewStartedAt = useRef(0);
   const device = useCameraDevice(settings.facing);
   const [cameraMounted, setCameraMounted] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [restartNonce, setRestartNonce] = useState(0);
   const automaticRetries = useRef(0);
@@ -100,6 +101,7 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
   useEffect(() => {
     previewReady.current = false;
     previewStartedAt.current = 0;
+    setCameraActive(false);
     setCameraMounted(false);
     if (!foreground || !focused || !hasPermission || !device) return;
     const timer = setTimeout(() => setCameraMounted(true), 450);
@@ -123,6 +125,7 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
     CameraLogger.log('VISION_CAMERA_ERROR', { message, retry: automaticRetries.current });
     previewReady.current = false;
     previewStartedAt.current = 0;
+    setCameraActive(false);
     setCameraError(message);
     setCameraMounted(false);
 
@@ -223,6 +226,13 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
     );
   }
 
+  // A defined torchMode is applied immediately. On Android, even "off" can
+  // call CameraX enableTorch() before the camera is active, so omit it until
+  // preview startup completes and for devices without a flash unit.
+  const torchMode = cameraActive && device.hasFlash
+    ? (settings.torch ? 'on' : 'off')
+    : undefined;
+
   return (
     <View style={styles.container}>
       <Camera
@@ -238,12 +248,14 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
           setCameraError(null);
           previewStartedAt.current = Date.now();
           previewReady.current = true;
+          setCameraActive(true);
         }}
         onPreviewStopped={() => {
           previewReady.current = false;
           previewStartedAt.current = 0;
+          setCameraActive(false);
         }}
-        torchMode={settings.torch ? 'on' : 'off'}
+        torchMode={torchMode}
         resizeMode="cover"
       />
       {children}
