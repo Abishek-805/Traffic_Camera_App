@@ -17,6 +17,7 @@ export interface IConnectionService {
   getBufferedAmount(): number;
   canCaptureFrame?(): boolean;
   getFrameLatency?(): { roundTripMs: number; serverMs: number; queueMs: number } | null;
+  getRequestedTargetFps?(): number | null;
   getReconnectAttempts(): number;
   getLastReconnectDelayMs(): number;
   getLastDisconnectReason(): string;

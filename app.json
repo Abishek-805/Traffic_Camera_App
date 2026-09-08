@@ -2,8 +2,8 @@
   "expo": {
     "name": "Traffic Camera Node",
     "slug": "traffic-camera-node",
-    "version": "1.0.3",
-    "orientation": "portrait",
+    "version": "1.0.5",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
@@ -38,7 +38,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "package": "com.smile_505.trafficcameranode",
-      "versionCode": 4
+      "versionCode": 6
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -17,7 +17,7 @@ interface CameraPreviewProps {
   autofocus?: 'on' | 'off';
   mode?: CameraMode;
   isStreaming?: boolean;
-  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number }) => void;
+  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number; rotation?: number; orientation?: string }) => void;
 }
 
 export const CameraPreview: React.FC<CameraPreviewProps> = React.memo(({

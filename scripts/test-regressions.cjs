@@ -33,6 +33,22 @@ function load(relative) {
   return module.exports;
 }
 (async () => {
+  const cameraModule = load('src/camera/CameraService');
+  const camera = new cameraModule.CameraService();
+  assert.equal(camera.getSettings().resolution, '720p', 'New installs default to the balanced detection profile');
+  assert.equal(camera.getSettings().targetFps, 4, 'New installs sample at 4 FPS for temporal tracking');
+  const balanced = typeof cameraModule.getStreamEncodingProfile === 'function'
+    ? cameraModule.getStreamEncodingProfile('720p')
+    : null;
+  assert.equal(balanced?.maxEdge, 1280);
+  assert.equal(balanced?.jpegQuality, 75);
+  const orientation = load('src/camera/orientation');
+  assert.equal(orientation.getCanonicalRotation('up'), 0);
+  assert.equal(orientation.getCanonicalRotation('right'), 270);
+  assert.equal(orientation.getCanonicalRotation('down'), 180);
+  assert.equal(orientation.getCanonicalRotation('left'), 90);
+  assert.equal(orientation.getCanonicalRotation(undefined), 0);
+
   const { WebSocketConnectionService } = load('src/services/connection/WebSocketConnectionService');
   const service = new WebSocketConnectionService();
   const connection = service.connect({ server: '192.168.1.10', port: 8000, session: 'CAM-NORTH-TEST', token: 'pairing', secure: false, protocol: 'ws', expires: Date.now() + 10000 });
@@ -51,11 +67,13 @@ function load(relative) {
   assert.equal(service.getState(), 'STREAMING');
   service.sendMessage({ type: 'VIDEO_FRAME', timestamp: Date.now(), payload: { frame_id: 'NORTH-test-000001', frame_data: 'test' } });
   assert.equal(socket.sent.at(-1).payload.session_token, 'issued-session');
-  assert.equal(service.canCaptureFrame(), false, 'Only one processed frame may be in flight');
+  assert.equal(service.canCaptureFrame(), true, 'Capture remains decoupled while YOLO processes an earlier frame');
+  service.sendMessage({ type: 'VIDEO_FRAME', timestamp: Date.now(), payload: { frame_id: 'NORTH-test-000002', frame_data: 'test' } });
+  assert.equal(socket.sent.at(-1).payload.frame_id, 'NORTH-test-000002', 'newer frame IDs remain independently identifiable');
   socket.onmessage({ data: JSON.stringify({ type: 'FRAME_ACK', payload: {
     frame_id: 'wrong-frame', server_processing_ms: 20, queue_wait_ms: 5,
   } }) });
-  assert.equal(service.canCaptureFrame(), false, 'An unrelated ACK must not release capture backpressure');
+  assert.equal(service.canCaptureFrame(), true, 'An unrelated ACK must not corrupt bounded in-flight tracking');
   socket.onmessage({ data: JSON.stringify({ type: 'FRAME_ACK', payload: {
     frame_id: 'NORTH-test-000001', server_processing_ms: 20, queue_wait_ms: 5,
   } }) });

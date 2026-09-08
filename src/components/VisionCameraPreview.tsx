@@ -7,6 +7,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors } from '../theme';
 import { useCameraSettings } from '../hooks/useCamera';
 import { CameraLogger } from '../utils/logger';
+import { getStreamEncodingProfile } from '../camera/CameraService';
+import { getCanonicalRotation } from '../camera/orientation';
 
 let VisionCamModule: any = null;
 try {
@@ -17,7 +19,7 @@ try {
 
 interface VisionCameraPreviewProps {
   children?: React.ReactNode;
-  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number }) => void;
+  onFrameSampled?: (frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number; rotation?: number; orientation?: string }) => void;
   isStreaming?: boolean;
   cameraRef?: React.RefObject<any>;
 }
@@ -57,13 +59,16 @@ export const VisionCameraPreview: React.FC<VisionCameraPreviewProps> = React.mem
 });
 
 const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFrameSampled, isStreaming = false, cameraRef }) => {
-  const { Camera, useCameraDevice, useCameraPermission } = VisionCamModule;
+  const { Camera, useCameraDevice, useCameraPermission, useOrientation } = VisionCamModule;
   const { hasPermission, requestPermission } = useCameraPermission();
   const { settings } = useCameraSettings();
   const focused = useIsFocused();
   const previewReady = useRef(false);
   const previewStartedAt = useRef(0);
   const device = useCameraDevice(settings.facing);
+  const deviceOrientation = useOrientation('device');
+  const deviceOrientationRef = useRef(deviceOrientation);
+  deviceOrientationRef.current = deviceOrientation;
   const [cameraMounted, setCameraMounted] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -159,14 +164,17 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
           owned = true;
           image = await cameraRef.current.takeSnapshot();
           if (!cancelled && image) {
-            const maxEdge = settings.resolution === '1080p' ? 1920 : settings.resolution === '720p' ? 1280 : 640;
-            const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+            const profile = getStreamEncodingProfile(settings.resolution);
+            const scale = Math.min(1, profile.maxEdge / Math.max(image.width, image.height));
             const width = Math.max(1, Math.round(image.width * scale));
             const height = Math.max(1, Math.round(image.height * scale));
             resized = await image.resizeAsync(width, height);
-            const encoded = await resized.toEncodedImageDataAsync('jpg', 65);
+            const encoded = await resized.toEncodedImageDataAsync('jpg', profile.jpegQuality);
             if (!cancelled) onFrameSampledRef.current?.({
-              base64: arrayBufferToBase64(encoded.buffer), width, height, timestamp: started, captureDurationMs: Date.now() - started,
+              base64: arrayBufferToBase64(encoded.buffer), width, height, timestamp: started,
+              captureDurationMs: Date.now() - started,
+              rotation: getCanonicalRotation(deviceOrientationRef.current),
+              orientation: deviceOrientationRef.current || 'unknown',
             });
           }
         }
@@ -176,7 +184,8 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
         resized?.dispose?.();
         image?.dispose?.();
         if (owned) sampling.current = false;
-        const intervalMs = Math.round(1000 / Math.max(1, settings.targetFps));
+        const requestedFps = ConnectionServiceFactory.getInstance().getRequestedTargetFps?.();
+        const intervalMs = Math.round(1000 / Math.max(1, requestedFps ?? settings.targetFps));
         if (!cancelled) timer = setTimeout(sample, Math.max(50, intervalMs - (Date.now() - started)));
       }
     };

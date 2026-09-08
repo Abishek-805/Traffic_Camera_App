@@ -4,6 +4,7 @@ import { CameraHealthState } from '../../types/camera-health';
 import { CameraCaptureService } from './CameraCaptureService';
 import { UploadWorker } from './UploadWorker';
 import { CameraLogger } from '../../utils/logger';
+import { getStreamEncodingProfile } from '../../camera/CameraService';
 
 export class CameraStreamingService implements ICameraStreamingService {
   private stats: FrameStats = {
@@ -53,7 +54,8 @@ export class CameraStreamingService implements ICameraStreamingService {
     this.stats.avgSendTimeMs = 0;
     this.stats.socketBufferPeakBytes = 0;
     this.stats.currentCaptureIntervalMs = 500;
-    this.stats.resolution = settings.resolution === '480p' ? '640x360' : settings.resolution === '720p' ? '1280x720' : '1920x1080';
+    const profile = getStreamEncodingProfile(settings.resolution);
+    this.stats.resolution = `${profile.width}x${profile.height}`;
     this.stats.lastFrameTime = Date.now();
     this.frameTimestamps = [];
 
@@ -132,25 +134,15 @@ export class CameraStreamingService implements ICameraStreamingService {
       this.notifyStatsListeners();
     });
 
-    // Resolve capture options — streaming target: 640×360 @ quality 0.25 (16:9 native)
-    let quality = 0.25;
-    let width = 640;
-    let height = 360;
-    if (settings.resolution === '720p') {
-      quality = 0.15;
-      width = 1280;
-      height = 720;
-    } else if (settings.resolution === '1080p') {
-      quality = 0.25;
-      width = 1920;
-      height = 1080;
-    }
-
     this.uploadWorker.start();
-    this.captureService.start(cameraRef, { quality, maxWidth: width, maxHeight: height });
+    this.captureService.start(cameraRef, {
+      quality: profile.legacyQuality,
+      maxWidth: profile.width,
+      maxHeight: profile.height,
+    });
   }
 
-  public handleFrameSampled(frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number }): void {
+  public handleFrameSampled(frameData: { base64: string; width: number; height: number; timestamp: number; captureDurationMs?: number; rotation?: number; orientation?: string }): void {
     if (this.uploadWorker) {
       this.setHealthState(CameraHealthState.Streaming);
       this.stats.resolution = `${frameData.width}x${frameData.height}`;
@@ -160,6 +152,8 @@ export class CameraStreamingService implements ICameraStreamingService {
         height: frameData.height,
         captureDurationMs: frameData.captureDurationMs ?? 0,
         timestamp: frameData.timestamp,
+        rotation: frameData.rotation,
+        orientation: frameData.orientation,
       });
       this.stats.overwriteFrames = this.uploadWorker.getOverwriteCount();
       this.stats.droppedFrames = this.uploadWorker.getDroppedFrameCount();

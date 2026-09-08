@@ -14,6 +14,8 @@ export interface CaptureResult {
   height: number;
   captureDurationMs: number;
   timestamp: number;
+  rotation?: number;
+  orientation?: string;
 }
 
 export interface UploadResult {
@@ -203,6 +205,10 @@ export class UploadWorker {
           upload_timestamp: uploadTimestamp,
           frame_age_ms: frameAgeMs,
           capture_timestamp_iso: new Date(frame.timestamp).toISOString(),
+          width: frame.width,
+          height: frame.height,
+          rotation: frame.rotation ?? 0,
+          orientation: frame.orientation ?? 'unknown',
         },
       });
 

@@ -2,11 +2,31 @@ import { ICameraService } from './ICameraService';
 import { CameraSettings, CameraCapabilities, CameraType, VideoQuality } from '../types/camera';
 import { DeviceUtils } from '../utils/device';
 
+export interface StreamEncodingProfile {
+  maxEdge: number;
+  jpegQuality: number;
+  legacyQuality: number;
+  width: number;
+  height: number;
+}
+
+export const getStreamEncodingProfile = (resolution: VideoQuality): StreamEncodingProfile => {
+  switch (resolution) {
+    case '480p':
+      return { maxEdge: 640, jpegQuality: 65, legacyQuality: 0.65, width: 640, height: 360 };
+    case '1080p':
+      return { maxEdge: 1920, jpegQuality: 80, legacyQuality: 0.8, width: 1920, height: 1080 };
+    case '720p':
+    default:
+      return { maxEdge: 1280, jpegQuality: 75, legacyQuality: 0.75, width: 1280, height: 720 };
+  }
+};
+
 export class CameraService implements ICameraService {
   private settings: CameraSettings = {
     facing: 'back',
-    resolution: '480p',
-    targetFps: 2,
+    resolution: '720p',
+    targetFps: 4,
     torch: false,
     zoom: 0,
     autoFocus: true,
@@ -33,15 +53,8 @@ export class CameraService implements ICameraService {
   }
 
   public getResolutionConfig(): { quality: number; width: number; height: number } {
-    switch (this.settings.resolution) {
-      case '480p':
-        return { quality: 0.25, width: 640, height: 360 };  // 16:9 native
-      case '720p':
-        return { quality: 0.15, width: 1280, height: 720 };
-      case '1080p':
-      default:
-        return { quality: 0.25, width: 1920, height: 1080 };
-    }
+    const profile = getStreamEncodingProfile(this.settings.resolution);
+    return { quality: profile.legacyQuality, width: profile.width, height: profile.height };
   }
 
   public setTorch(enabled: boolean): void {

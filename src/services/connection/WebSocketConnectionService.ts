@@ -13,13 +13,24 @@ export class WebSocketConnectionService implements IConnectionService {
   private stateListeners: Set<StateChangeListener> = new Set();
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private currentPing: number = 0;
-  private pendingFrame: { id: string; sent: number } | null = null;
+  private pendingFrames: Map<string, number> = new Map();
+  private readonly maxPendingFrames = 4;
+  private serverTargetFps: number | null = null;
   private frameLatency: { roundTripMs: number; serverMs: number; queueMs: number } | null = null;
   public canCaptureFrame(): boolean {
+    this.prunePendingFrames();
     return this.state === 'STREAMING' && this.getBufferedAmount() < 64 * 1024 &&
-      (!this.pendingFrame || Date.now() - this.pendingFrame.sent > 1500);
+      this.pendingFrames.size < this.maxPendingFrames;
   }
   public getFrameLatency() { return this.frameLatency; }
+  public getRequestedTargetFps(): number | null { return this.serverTargetFps; }
+
+  private prunePendingFrames(): void {
+    const cutoff = Date.now() - 5000;
+    for (const [id, sent] of this.pendingFrames) {
+      if (sent < cutoff) this.pendingFrames.delete(id);
+    }
+  }
 
 
   // Bounded Exponential Auto-Reconnect State
@@ -56,7 +67,7 @@ export class WebSocketConnectionService implements IConnectionService {
     this.stopStableConnectionTimer();
     this.cancelAutoReconnect();
 
-    this.pendingFrame = null;
+    this.pendingFrames.clear();
     this.frameLatency = null;
     this.setState('CONNECTING');
 
@@ -126,9 +137,10 @@ export class WebSocketConnectionService implements IConnectionService {
             const data = JSON.parse(event.data);
             if (data?.type === 'FRAME_ACK') {
               const payload = data.payload || {};
-              if (this.pendingFrame && payload.frame_id === this.pendingFrame.id) {
-                const roundTripMs = Math.max(0, Date.now() - this.pendingFrame.sent);
-                this.pendingFrame = null;
+              const sentAt = this.pendingFrames.get(payload.frame_id);
+              if (sentAt !== undefined) {
+                const roundTripMs = Math.max(0, Date.now() - sentAt);
+                this.pendingFrames.delete(payload.frame_id);
                 this.frameLatency = {
                   roundTripMs,
                   serverMs: Number.isFinite(payload.server_processing_ms) ? payload.server_processing_ms : 0,
@@ -186,6 +198,8 @@ export class WebSocketConnectionService implements IConnectionService {
                 this.currentPing = msg.payload.pingMs;
               }
             } else if (msg.type === 'START_STREAM') {
+              const requested = Number(msg.payload?.target_fps ?? msg.payload?.targetFps);
+              this.serverTargetFps = Number.isFinite(requested) ? Math.max(1, Math.min(10, requested)) : null;
               this.setState('STREAMING');
             } else if (msg.type === 'STOP_STREAM') {
               this.setState('WAITING');
@@ -312,7 +326,15 @@ export class WebSocketConnectionService implements IConnectionService {
 
     try {
       this.socket.send(JSON.stringify(message));
-      if (message.type === 'VIDEO_FRAME') this.pendingFrame = { id: message.payload.frame_id, sent: Date.now() };
+      if (message.type === 'VIDEO_FRAME') {
+        this.prunePendingFrames();
+        this.pendingFrames.set(message.payload.frame_id, Date.now());
+        while (this.pendingFrames.size > this.maxPendingFrames) {
+          const oldest = this.pendingFrames.keys().next().value;
+          if (oldest === undefined) break;
+          this.pendingFrames.delete(oldest);
+        }
+      }
       return true;
     } catch (e) {
       console.warn('[WebSocketConnectionService] Send failed:', e);
