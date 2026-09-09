@@ -6,6 +6,8 @@ import { MessageFactory } from '../../protocol/builders/MessageFactory';
 import { ProtocolValidator } from '../../protocol/validators/ProtocolValidator';
 
 export class WebSocketConnectionService implements IConnectionService {
+  private videoSupported = false;
+  public supportsVideo() { return this.videoSupported; }
   private state: ConnectionStateEnum = 'DISCONNECTED';
   private connectionInfo: ConnectionInfo | null = null;
   private socket: WebSocket | null = null;
@@ -14,13 +16,14 @@ export class WebSocketConnectionService implements IConnectionService {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private currentPing: number = 0;
   private pendingFrames: Map<string, number> = new Map();
-  private readonly maxPendingFrames = 4;
+  private readonly maxPendingFrames = 64;
   private serverTargetFps: number | null = null;
   private frameLatency: { roundTripMs: number; serverMs: number; queueMs: number } | null = null;
   public canCaptureFrame(): boolean {
     this.prunePendingFrames();
-    return this.state === 'STREAMING' && this.getBufferedAmount() < 64 * 1024 &&
-      this.pendingFrames.size < this.maxPendingFrames;
+    // Processing ACKs are optional: the server intentionally replaces stale
+    // queued frames. Bound telemetry history, not capture, by pending IDs.
+    return this.state === 'STREAMING' && this.getBufferedAmount() < 64 * 1024;
   }
   public getFrameLatency() { return this.frameLatency; }
   public getRequestedTargetFps(): number | null { return this.serverTargetFps; }
@@ -164,6 +167,7 @@ export class WebSocketConnectionService implements IConnectionService {
             } else if (msg.type === 'REGISTRATION_ACK') {
               clearTimeout(handshakeTimer);
               const payload = msg.payload || {};
+              this.videoSupported = Array.isArray(payload.transports) && payload.transports.includes('webrtc');
               registeredOnSocket = true;
               const sessionToken = payload.session_token || qrPayload.token;
               this.connectionInfo = {

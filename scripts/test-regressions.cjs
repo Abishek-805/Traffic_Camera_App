@@ -43,11 +43,15 @@ function load(relative) {
   assert.equal(balanced?.maxEdge, 1280);
   assert.equal(balanced?.jpegQuality, 75);
   const orientation = load('src/camera/orientation');
-  assert.equal(orientation.getCanonicalRotation('up'), 0);
-  assert.equal(orientation.getCanonicalRotation('right'), 270);
-  assert.equal(orientation.getCanonicalRotation('down'), 180);
-  assert.equal(orientation.getCanonicalRotation('left'), 90);
-  assert.equal(orientation.getCanonicalRotation(undefined), 0);
+  for (const mode of ['up', 'right', 'down', 'left']) {
+    assert.equal(orientation.getPreviewRotation(mode, mode), 0,
+      'Preview bitmap already upright when device and display agree');
+  }
+  assert.equal(orientation.getPreviewRotation('right', 'up'), 270);
+  assert.equal(orientation.getPreviewRotation('left', 'up'), 90);
+  assert.equal(orientation.getPreviewRotation('down', 'up'), 180);
+  assert.equal(orientation.getPreviewRotation(undefined, 'up'), null);
+  assert.equal(orientation.getPreviewRotation('right', undefined), null);
 
   const { WebSocketConnectionService } = load('src/services/connection/WebSocketConnectionService');
   const service = new WebSocketConnectionService();
@@ -79,6 +83,13 @@ function load(relative) {
   } }) });
   assert.equal(service.canCaptureFrame(), true, 'The matching processed-frame ACK releases capture');
   assert.equal(service.getFrameLatency().serverMs, 20);
+  for (let i = 0; i < 20; i++) {
+    assert.equal(service.canCaptureFrame(), true, 'Dropped backend frames must not stall fresh capture');
+    service.sendMessage({ type: 'VIDEO_FRAME', timestamp: Date.now(), payload: { frame_id: `dropped-${i}` } });
+  }
+  socket.bufferedAmount = 128 * 1024;
+  assert.equal(service.canCaptureFrame(), false, 'Actual network congestion still pauses capture');
+  socket.bufferedAmount = 0;
   socket.onmessage({ data: JSON.stringify({ type: 'HEARTBEAT_ACK', timestamp: Date.now() / 1000, payload: { client_timestamp: Date.now() - 12 } }) });
   assert.ok(service.getPingLatency() < 1000, 'RTT must not mix milliseconds and seconds');
   await service.disconnect();

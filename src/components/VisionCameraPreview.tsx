@@ -8,7 +8,7 @@ import { AppColors } from '../theme';
 import { useCameraSettings } from '../hooks/useCamera';
 import { CameraLogger } from '../utils/logger';
 import { getStreamEncodingProfile } from '../camera/CameraService';
-import { getCanonicalRotation } from '../camera/orientation';
+import { getPreviewRotation } from '../camera/orientation';
 
 let VisionCamModule: any = null;
 try {
@@ -67,8 +67,11 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
   const previewStartedAt = useRef(0);
   const device = useCameraDevice(settings.facing);
   const deviceOrientation = useOrientation('device');
+  const interfaceOrientation = useOrientation('interface');
   const deviceOrientationRef = useRef(deviceOrientation);
   deviceOrientationRef.current = deviceOrientation;
+  const interfaceOrientationRef = useRef(interfaceOrientation);
+  interfaceOrientationRef.current = interfaceOrientation;
   const [cameraMounted, setCameraMounted] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -162,6 +165,10 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
             (ConnectionServiceFactory.getInstance().canCaptureFrame?.() ?? true)) {
           sampling.current = true;
           owned = true;
+          const captureDevice = deviceOrientationRef.current;
+          const captureDisplay = interfaceOrientationRef.current;
+          const rotation = getPreviewRotation(captureDevice, captureDisplay);
+          if (rotation === null) return;
           image = await cameraRef.current.takeSnapshot();
           if (!cancelled && image) {
             const profile = getStreamEncodingProfile(settings.resolution);
@@ -170,11 +177,13 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
             const height = Math.max(1, Math.round(image.height * scale));
             resized = await image.resizeAsync(width, height);
             const encoded = await resized.toEncodedImageDataAsync('jpg', profile.jpegQuality);
-            if (!cancelled) onFrameSampledRef.current?.({
+            // Never label a frame with an orientation sampled after it was captured.
+            if (!cancelled && captureDevice === deviceOrientationRef.current &&
+                captureDisplay === interfaceOrientationRef.current) onFrameSampledRef.current?.({
               base64: arrayBufferToBase64(encoded.buffer), width, height, timestamp: started,
               captureDurationMs: Date.now() - started,
-              rotation: getCanonicalRotation(deviceOrientationRef.current),
-              orientation: deviceOrientationRef.current || 'unknown',
+              rotation,
+              orientation: captureDevice,
             });
           }
         }
@@ -250,6 +259,7 @@ const VisionCameraInner: React.FC<VisionCameraPreviewProps> = ({ children, onFra
         device={device}
         isActive={foreground && focused}
         implementationMode="compatible"
+        orientationSource="interface"
         onStarted={() => CameraLogger.log('VISION_CAMERA_STARTED', { instanceId: instanceIdRef.current })}
         onError={handleCameraError}
         onPreviewStarted={() => {

@@ -14,6 +14,9 @@ export type MessageType =
   | 'RECONNECT_ACK'
   | 'ERROR'
   | 'DISCONNECT'
+  | 'WEBRTC_OFFER'
+  | 'WEBRTC_ANSWER'
+  | 'WEBRTC_STOP'
   | 'VIDEO_FRAME';
 
 export interface SocketMessage<T = any> {

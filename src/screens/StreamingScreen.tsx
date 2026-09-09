@@ -1,4 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import {WebRTCPreview} from '../components/WebRTCPreview';
+import {ConnectionServiceFactory} from '../services/connection/ConnectionServiceFactory';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, Surface } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -17,7 +19,7 @@ import { CameraCaptureService } from '../services/camera/CameraCaptureService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Streaming'>;
 
-export const StreamingScreen: React.FC<Props> = ({ navigation }) => {
+const SampledStreamingScreen: React.FC<Props> = ({ navigation }) => {
   const { settings: appSettings } = useSettings();
   const { connectionState, connectionInfo, pingMs, requestStopStream, disconnect } = useConnection();
   
@@ -287,3 +289,16 @@ const styles = StyleSheet.create({
     color: AppColors.textSecondary,
   },
 });
+
+export const StreamingScreen: React.FC<Props> = (props) => {
+  const {connectionState} = useConnection();
+  const [fallback,setFallback] = useState('');
+  const useFallback = useCallback((reason:string)=>setFallback(reason),[]);
+  const service = ConnectionServiceFactory.getInstance() as any;
+  useEffect(()=>{
+    if(connectionState==='WAITING') props.navigation.replace('Waiting');
+    if(connectionState==='DISCONNECTED' || connectionState==='ERROR') props.navigation.replace('Disconnected',{reason:'Connection ended'});
+  },[connectionState,props.navigation]);
+  if (!fallback && service.supportsVideo?.()) return <WebRTCPreview onFallback={useFallback}/>;
+  return <View style={{flex:1}}>{fallback ? <Text style={{backgroundColor:'#122030',color:'white',padding:12}}>{fallback}</Text>:null}<SampledStreamingScreen {...props}/></View>;
+};
