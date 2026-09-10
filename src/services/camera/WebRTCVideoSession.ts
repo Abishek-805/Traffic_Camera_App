@@ -13,7 +13,7 @@ export class WebRTCVideoSession {
     try {
       this.timer = setTimeout(() => fail('Video connection timed out'), 15000);
       const stream = await this.rtc.mediaDevices.getUserMedia({audio:false,
-        video:{facingMode:facing === 'front' ? 'user' : 'environment',width:1280,height:720,frameRate:10}});
+        video:{facingMode:facing === 'front' ? 'user' : 'environment',width:1280,height:720,frameRate:5}});
       if (!active()) { stream.getTracks().forEach((t:any)=>t.stop()); stream.release(); return; }
       this.stream = stream;
       preview(stream);
