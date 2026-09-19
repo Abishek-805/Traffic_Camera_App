@@ -17,7 +17,18 @@ export type MessageType =
   | 'WEBRTC_OFFER'
   | 'WEBRTC_ANSWER'
   | 'WEBRTC_STOP'
+  | 'WEBRTC_STATS'
   | 'VIDEO_FRAME';
+
+export interface WebRTCStatsPayload {
+  sentFps: number | null;
+  packetsLost: number | null;
+  jitterMs: number | null;
+  frameWidth: number | null;
+  frameHeight: number | null;
+  encodeMsPerFrame: number | null;
+  jitterBufferDelayMs: number | null;
+}
 
 export interface SocketMessage<T = any> {
   id?: string;

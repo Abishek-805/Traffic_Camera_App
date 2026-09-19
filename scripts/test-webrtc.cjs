@@ -5,7 +5,15 @@ const ts = require('typescript');
 const source = ts.transpileModule(fs.readFileSync('src/services/camera/WebRTCVideoSession.ts', 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const moduleResult = {exports:{}};
 vm.runInNewContext(source, {module:moduleResult,exports:moduleResult.exports,require,Date,Error,Promise,setTimeout,clearTimeout});
-const {WebRTCVideoSession} = moduleResult.exports;
+const {WebRTCVideoSession,normalizeWebRTCStats} = moduleResult.exports;
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(normalizeWebRTCStats([{type:'outbound-rtp',kind:'video',framesPerSecond:8}]))),
+  {sentFps:8,packetsLost:null,jitterMs:null,frameWidth:null,frameHeight:null,encodeMsPerFrame:null,jitterBufferDelayMs:null},
+);
+assert.equal(normalizeWebRTCStats(
+  [{type:'outbound-rtp',kind:'video',framesEncoded:2,totalEncodeTime:0.2}],
+  {framesEncoded:10,totalEncodeTime:1},
+).encodeMsPerFrame,null,'counter resets must not produce negative rates');
 let released = 0, stopped = 0, captureConstraints;
 const stream = {getTracks:()=>[{stop:()=>stopped++}],getVideoTracks:()=>[{}],release:()=>released++,toURL:()=> 'camera'};
 class Peer {
@@ -16,6 +24,7 @@ class Peer {
   async createOffer(){return {type:'offer',sdp:'v=0\r\na=extmap:4 urn:3gpp:video-orientation\r\na=sendonly\r\n'};}
   async setLocalDescription(d){this.localDescription={...d,sdp:`${d.sdp}a=candidate:1 1 UDP 1 192.168.1.2 5000 typ host\r\n`};}
   async setRemoteDescription(d){this.remoteDescription=d;}
+  async getStats(){return new Map([['video',{type:'outbound-rtp',kind:'video',framesPerSecond:8}]]);}
   close(){this.closed=true;}
 }
 const sent=[];let listener;
@@ -33,6 +42,9 @@ const rtc={RTCPeerConnection:Peer,mediaDevices:{getUserMedia:async c=>{assert.eq
  listener({type:'WEBRTC_ANSWER',payload:{sdp:'answer',type:'answer'}});
  await Promise.resolve();
  assert.equal(Peer.last.remoteDescription.sdp,'answer');
+ Peer.last.connectionState='connected';Peer.last.events.connectionstatechange();
+ await new Promise(resolveStats=>setTimeout(resolveStats,0));
+ assert.equal(sent.filter(x=>x.type==='WEBRTC_STATS').length,1,'connected peer must publish stats immediately');
  session.stop();session.stop();
  assert.equal(released,1);assert.equal(stopped,1);assert.equal(Peer.last.closed,true);
  assert.equal(listener,null);

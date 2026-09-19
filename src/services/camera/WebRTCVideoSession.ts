@@ -4,12 +4,57 @@ const OUTBOUND_VIDEO_FPS = 8;
 const ICE_GATHERING_TIMEOUT_MS = 1500;
 const CONNECTION_TIMEOUT_MS = 5000;
 
+export interface NormalizedWebRTCStats {
+  sentFps: number | null;
+  packetsLost: number | null;
+  jitterMs: number | null;
+  frameWidth: number | null;
+  frameHeight: number | null;
+  encodeMsPerFrame: number | null;
+  jitterBufferDelayMs: number | null;
+}
+
+const bounded = (value: any, maximum: number): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.min(value, maximum)
+    : null;
+
+export function normalizeWebRTCStats(
+  reports: any,
+  previous: any = null,
+  elapsedMs = 1000,
+): NormalizedWebRTCStats {
+  const rows = Array.isArray(reports) ? reports : Array.from(reports?.values?.() || []);
+  const outbound = rows.find((row: any) => row?.type === 'outbound-rtp' && !row.isRemote && (row.kind === 'video' || row.mediaType === 'video'));
+  const remote = rows.find((row: any) => row?.type === 'remote-inbound-rtp' && (row.kind === 'video' || row.mediaType === 'video'));
+  const inbound = rows.find((row: any) => row?.type === 'inbound-rtp' && (row.kind === 'video' || row.mediaType === 'video'));
+  const source = rows.find((row: any) => row?.type === 'media-source' && (row.kind === 'video' || row.mediaType === 'video'));
+  const seconds = elapsedMs > 0 ? elapsedMs / 1000 : 0;
+  const frameDelta = outbound && previous && outbound.framesEncoded >= previous.framesEncoded
+    ? outbound.framesEncoded - previous.framesEncoded : null;
+  const encodeDelta = outbound && previous && outbound.totalEncodeTime >= previous.totalEncodeTime
+    ? outbound.totalEncodeTime - previous.totalEncodeTime : null;
+  const jitterDelay = inbound?.jitterBufferEmittedCount > 0
+    ? (inbound.jitterBufferDelay / inbound.jitterBufferEmittedCount) * 1000 : null;
+  return {
+    sentFps: bounded(outbound?.framesPerSecond ?? (frameDelta != null && seconds ? frameDelta / seconds : null), 240),
+    packetsLost: bounded(remote?.packetsLost, 1_000_000_000),
+    jitterMs: bounded(remote?.jitter == null ? null : remote.jitter * 1000, 60_000),
+    frameWidth: bounded(outbound?.frameWidth ?? source?.width, 16_384),
+    frameHeight: bounded(outbound?.frameHeight ?? source?.height, 16_384),
+    encodeMsPerFrame: bounded(encodeDelta != null && frameDelta ? (encodeDelta / frameDelta) * 1000 : null, 60_000),
+    jitterBufferDelayMs: bounded(jitterDelay, 60_000),
+  };
+}
+
 export class WebRTCVideoSession {
   private pc: any = null;
   private stream: any = null;
   private generation = 0;
   private unsubscribe: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private statsTimer: ReturnType<typeof setTimeout> | null = null;
+  private previousOutbound: any = null;
   constructor(private connection: any, private rtc: any) {}
   async start(
     facing: string,
@@ -49,6 +94,7 @@ export class WebRTCVideoSession {
         if (pc.connectionState === 'connected') {
           if (this.timer) { clearTimeout(this.timer); this.timer=null; }
           progress('connected');
+          this.pollStats(generation);
         }
         if (['failed','disconnected'].includes(pc.connectionState)) fail('WebRTC video connection was lost. Retry the video connection.');
       });
@@ -85,10 +131,26 @@ export class WebRTCVideoSession {
       else if (active()) progress('offer');
     } catch (error) { fail(error); }
   }
+  private async pollStats(generation: number) {
+    if (generation !== this.generation || !this.pc?.getStats) return;
+    try {
+      const report = await this.pc.getStats();
+      if (generation !== this.generation) return;
+      const rows = Array.from(report?.values?.() || report || []);
+      const stats = normalizeWebRTCStats(rows, this.previousOutbound, 1000);
+      this.previousOutbound = rows.find((row:any) => row?.type === 'outbound-rtp' && (row.kind === 'video' || row.mediaType === 'video')) || null;
+      this.connection.sendMessage({type:'WEBRTC_STATS',timestamp:Date.now(),payload:stats});
+    } catch {
+      // Stats are diagnostic; media remains live when a platform omits them.
+    }
+    if (generation === this.generation) this.statsTimer=setTimeout(()=>this.pollStats(generation),1000);
+  }
   stop() {
     ++this.generation;
     if(this.timer) clearTimeout(this.timer);
     this.timer=null;
+    if(this.statsTimer) clearTimeout(this.statsTimer);
+    this.statsTimer=null; this.previousOutbound=null;
     this.unsubscribe?.(); this.unsubscribe=null;
     if(this.pc) {
       this.pc.close(); this.pc=null;
