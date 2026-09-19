@@ -92,8 +92,13 @@ function load(relative) {
   socket.bufferedAmount = 0;
   socket.onmessage({ data: JSON.stringify({ type: 'HEARTBEAT_ACK', timestamp: Date.now() / 1000, payload: { client_timestamp: Date.now() - 12 } }) });
   assert.ok(service.getPingLatency() < 1000, 'RTT must not mix milliseconds and seconds');
-  await service.disconnect();
+  const disconnectsBefore = socket.sent.filter(message => message.type === 'DISCONNECT').length;
+  await service.disconnect('Network handoff', { preserveReconnectIdentity: true });
   assert.equal(socket.sent.at(-1).payload.node_id, 'CAM-NORTH-TEST');
+  assert.equal(socket.sent.filter(message => message.type === 'DISCONNECT').length, disconnectsBefore + 1,
+    'Graceful teardown sends exactly one DISCONNECT');
+  assert.equal(service.getConnectionInfo()?.token, 'issued-session',
+    'Explicit reconnect identity remains available when requested');
   const { QRCodeService } = load('src/services/qr/QRCodeService');
   assert.throws(() => QRCodeService.parseQRPayload(JSON.stringify({ server: '192.168.1.10', port: 8000,
     session: 'test', token: 'test', expires: 1, protocol: 'ws', camera_direction: 'north' })), /expired/);

@@ -1,4 +1,4 @@
-import { IConnectionService, MessageListener, StateChangeListener } from './IConnectionService';
+import { DisconnectOptions, IConnectionService, MessageListener, StateChangeListener } from './IConnectionService';
 import { ConnectionInfo, ConnectionStateEnum, QRPayload } from '../../types/connection';
 import { SocketMessage } from '../../types/protocol';
 import { DeviceUtils } from '../../utils/device';
@@ -56,7 +56,10 @@ export class MockConnectionService implements IConnectionService {
     return this.connectionInfo;
   }
 
-  public async disconnect(reason: string = 'User initiated disconnect'): Promise<void> {
+  public async disconnect(
+    reason: string = 'User initiated disconnect',
+    options: DisconnectOptions = {},
+  ): Promise<void> {
     this.stopHeartbeat();
     const token = this.connectionInfo?.token || '';
     
@@ -65,7 +68,9 @@ export class MockConnectionService implements IConnectionService {
       this.notifyMessage(discMsg);
     }
 
-    this.connectionInfo = null;
+    if (!options.preserveReconnectIdentity) {
+      this.connectionInfo = null;
+    }
     this.setState('DISCONNECTED');
   }
 

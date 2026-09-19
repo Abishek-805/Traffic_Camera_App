@@ -4,9 +4,13 @@ import { SocketMessage } from '../../types/protocol';
 export type MessageListener = (message: SocketMessage) => void;
 export type StateChangeListener = (state: ConnectionStateEnum) => void;
 
+export interface DisconnectOptions {
+  preserveReconnectIdentity?: boolean;
+}
+
 export interface IConnectionService {
   connect(qrPayload: QRPayload): Promise<ConnectionInfo>;
-  disconnect(reason?: string): Promise<void>;
+  disconnect(reason?: string, options?: DisconnectOptions): Promise<void>;
   reconnect(): Promise<ConnectionInfo>;
   sendMessage(message: SocketMessage): boolean;
   onMessage(listener: MessageListener): () => void;

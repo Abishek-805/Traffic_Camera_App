@@ -1,4 +1,4 @@
-import { IConnectionService, MessageListener, StateChangeListener } from './IConnectionService';
+import { DisconnectOptions, IConnectionService, MessageListener, StateChangeListener } from './IConnectionService';
 import { ConnectionInfo, ConnectionStateEnum, QRPayload } from '../../types/connection';
 import { SocketMessage, RegisterCameraPayload } from '../../types/protocol';
 import { DeviceUtils } from '../../utils/device';
@@ -265,7 +265,10 @@ export class WebSocketConnectionService implements IConnectionService {
     });
   }
 
-  public async disconnect(reason: string = 'User disconnected'): Promise<void> {
+  public async disconnect(
+    reason: string = 'User disconnected',
+    options: DisconnectOptions = {},
+  ): Promise<void> {
     this.isManualDisconnect = true;
     this.lastDisconnectReason = reason;
     this.cancelAutoReconnect();
@@ -276,6 +279,7 @@ export class WebSocketConnectionService implements IConnectionService {
       try {
         const discMsg = MessageFactory.createMessage('DISCONNECT', { reason, node_id: this.connectionInfo.cameraId }, this.connectionInfo.token);
         this.sendMessage(discMsg);
+        await Promise.resolve();
       } catch {
         // Ignore send errors during shutdown
       }
@@ -286,7 +290,10 @@ export class WebSocketConnectionService implements IConnectionService {
       this.socket = null;
     }
 
-    this.connectionInfo = null;
+    if (!options.preserveReconnectIdentity) {
+      this.connectionInfo = null;
+      this.lastQRPayload = null;
+    }
     this.setState('DISCONNECTED');
   }
 
