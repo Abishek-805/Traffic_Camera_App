@@ -3,6 +3,8 @@ const LOCAL_PREVIEW_FPS = 24;
 const OUTBOUND_VIDEO_FPS = 8;
 const ICE_GATHERING_TIMEOUT_MS = 1500;
 const CONNECTION_TIMEOUT_MS = 5000;
+const FIRST_BACKEND_FRAME_TIMEOUT_MS = 6000;
+const BACKEND_FRAME_STALL_TIMEOUT_MS = 6000;
 
 export interface NormalizedWebRTCStats {
   sentFps: number | null;
@@ -55,6 +57,9 @@ export class WebRTCVideoSession {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private statsTimer: ReturnType<typeof setTimeout> | null = null;
   private previousOutbound: any = null;
+  private backendFrameSeen = false;
+  private lastBackendFrameAt = 0;
+  private reportFailure: ((error: any) => void) | null = null;
   constructor(private connection: any, private rtc: any) {}
   async start(
     facing: string,
@@ -65,6 +70,7 @@ export class WebRTCVideoSession {
     const generation = ++this.generation;
     const active = () => generation === this.generation;
     const fail = (error: any) => { if (active()) { this.stop(); failed(String(error?.message || error)); } };
+    this.reportFailure = fail;
     try {
       progress('camera');
       const stream = await this.rtc.mediaDevices.getUserMedia({audio:false,
@@ -92,8 +98,12 @@ export class WebRTCVideoSession {
       }
       pc.addEventListener('connectionstatechange', () => {
         if (pc.connectionState === 'connected') {
-          if (this.timer) { clearTimeout(this.timer); this.timer=null; }
-          progress('connected');
+          if (this.timer) clearTimeout(this.timer);
+          progress('awaiting backend frame');
+          this.timer = setTimeout(
+            () => fail('The backend did not acknowledge a WebRTC frame. Retrying the video connection is required.'),
+            FIRST_BACKEND_FRAME_TIMEOUT_MS,
+          );
           this.pollStats(generation);
         }
         if (['failed','disconnected'].includes(pc.connectionState)) fail('WebRTC video connection was lost. Retry the video connection.');
@@ -105,6 +115,12 @@ export class WebRTCVideoSession {
             progress('answer');
             await pc.setRemoteDescription(message.payload);
             progress('connecting');
+          }
+          if (message.type === 'FRAME_ACK') {
+            this.backendFrameSeen = true;
+            this.lastBackendFrameAt = Date.now();
+            if (this.timer) { clearTimeout(this.timer); this.timer=null; }
+            progress('connected');
           }
           if (message.type === 'ERROR' && message.payload?.error_code === 'WEBRTC_FAILED') fail(message.payload.message);
         } catch (error) { fail(error); }
@@ -143,6 +159,10 @@ export class WebRTCVideoSession {
     } catch {
       // Stats are diagnostic; media remains live when a platform omits them.
     }
+    if (this.backendFrameSeen && Date.now() - this.lastBackendFrameAt > BACKEND_FRAME_STALL_TIMEOUT_MS) {
+      this.reportFailure?.(new Error('The backend stopped acknowledging WebRTC frames. Retry the video connection.'));
+      return;
+    }
     if (generation === this.generation) this.statsTimer=setTimeout(()=>this.pollStats(generation),1000);
   }
   stop() {
@@ -151,6 +171,8 @@ export class WebRTCVideoSession {
     this.timer=null;
     if(this.statsTimer) clearTimeout(this.statsTimer);
     this.statsTimer=null; this.previousOutbound=null;
+    this.backendFrameSeen=false; this.lastBackendFrameAt=0;
+    this.reportFailure=null;
     this.unsubscribe?.(); this.unsubscribe=null;
     if(this.pc) {
       this.pc.close(); this.pc=null;

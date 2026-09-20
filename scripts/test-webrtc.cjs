@@ -32,7 +32,8 @@ const connection={sendMessage:m=>(sent.push(m),true),onMessage:f=>(listener=f,()
 const rtc={RTCPeerConnection:Peer,mediaDevices:{getUserMedia:async c=>{assert.equal(c.audio,false);captureConstraints=c;return stream;}}};
 (async()=>{
  const session=new WebRTCVideoSession(connection,rtc);
- await session.start('back',()=>{},()=>{});
+ const phases=[];
+ await session.start('back',()=>{},()=>{},phase=>phases.push(phase));
  assert.equal(captureConstraints.video.width,1280);
  assert.equal(captureConstraints.video.height,720);
  assert.equal(captureConstraints.video.frameRate,24,'local preview must remain smooth');
@@ -44,6 +45,9 @@ const rtc={RTCPeerConnection:Peer,mediaDevices:{getUserMedia:async c=>{assert.eq
  assert.equal(Peer.last.remoteDescription.sdp,'answer');
  Peer.last.connectionState='connected';Peer.last.events.connectionstatechange();
  await new Promise(resolveStats=>setTimeout(resolveStats,0));
+ assert.ok(!phases.includes('connected'),'ICE alone must not claim that backend media is live');
+ listener({type:'FRAME_ACK',payload:{frame_id:'CAM-NORTH-1'}});
+ assert.equal(phases.at(-1),'connected','a backend frame acknowledgement confirms usable media');
  assert.equal(sent.filter(x=>x.type==='WEBRTC_STATS').length,1,'connected peer must publish stats immediately');
  session.stop();session.stop();
  assert.equal(released,1);assert.equal(stopped,1);assert.equal(Peer.last.closed,true);

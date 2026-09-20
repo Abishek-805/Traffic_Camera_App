@@ -69,6 +69,10 @@ function load(relative) {
   assert.equal(socket.sent.at(-1).token, 'issued-session');
   socket.onmessage({ data: JSON.stringify({ type: 'START_STREAM', timestamp: Date.now(), payload: {} }) });
   assert.equal(service.getState(), 'STREAMING');
+  let observedFrameAck = false;
+  const stopListening = service.onMessage(message => {
+    if (message.type === 'FRAME_ACK') observedFrameAck = true;
+  });
   service.sendMessage({ type: 'VIDEO_FRAME', timestamp: Date.now(), payload: { frame_id: 'NORTH-test-000001', frame_data: 'test' } });
   assert.equal(socket.sent.at(-1).payload.session_token, 'issued-session');
   assert.equal(service.canCaptureFrame(), true, 'Capture remains decoupled while YOLO processes an earlier frame');
@@ -81,6 +85,8 @@ function load(relative) {
   socket.onmessage({ data: JSON.stringify({ type: 'FRAME_ACK', payload: {
     frame_id: 'NORTH-test-000001', server_processing_ms: 20, queue_wait_ms: 5,
   } }) });
+  assert.equal(observedFrameAck, true, 'media sessions must observe backend frame acknowledgements');
+  stopListening();
   assert.equal(service.canCaptureFrame(), true, 'The matching processed-frame ACK releases capture');
   assert.equal(service.getFrameLatency().serverMs, 20);
   for (let i = 0; i < 20; i++) {

@@ -150,7 +150,10 @@ export class WebSocketConnectionService implements IConnectionService {
                   queueMs: Number.isFinite(payload.queue_wait_ms) ? payload.queue_wait_ms : 0,
                 };
               }
-              // Frame acknowledgements are transport telemetry, not navigation commands.
+              // Frame acknowledgements prove that media reached the backend. Let
+              // the WebRTC session consume this liveness signal without treating
+              // it as a navigation command.
+              this.notifyMessage(data as SocketMessage);
               return;
             }
             if (!ProtocolValidator.isValidSocketMessage(data)) {
